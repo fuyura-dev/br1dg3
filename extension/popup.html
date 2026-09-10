@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BR1DG3 Extension</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    
+    <!-- Header -->
+    <header>
+      <div class="header-text">
+        <p class="subtitle">AUTOMATIC ACCESSIBILITY REPAIR</p>
+        <h1 class="title">BR1DG3</h1>
+      </div>
+      <div class="status-badge">ON</div>
+    </header>
+
+    <!-- Auto-repair Section -->
+    <div class="card flex-row">
+      <div class="card-text">
+        <h2>Auto-repair</h2>
+        <p>Automatically improves page accessibility after the webpage loads.</p>
+      </div>
+      <label class="switch">
+        <input type="checkbox" checked>
+        <span class="slider round"></span>
+      </label>
+    </div>
+
+    <!-- Current Page Status -->
+    <div class="card">
+      <h2>Current Page Status</h2>
+      <div class="alert-success">
+        Page scanned and improved.
+      </div>
+      
+      <div class="stats-grid">
+        <div class="stat-box">
+          <span class="stat-label">Issues found</span>
+          <span class="stat-value">12</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-label">Improvements applied</span>
+          <span class="stat-value">8</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-label">Page structure checked</span>
+          <span class="stat-value">14</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-label">Page result</span>
+          <span class="stat-value">Improved</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Buttons -->
+    <div class="button-group">
+      <button class="btn btn-primary">Re-scan Page</button>
+      <button class="btn btn-primary">View Summary</button>
+      <button class="btn btn-outline">Restore Original</button>
+    </div>
+
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

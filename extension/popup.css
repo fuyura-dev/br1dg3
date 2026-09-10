@@ -1,0 +1,239 @@
+:root {
+  --primary-blue: #2B3C9B; /* Mas buhay na blue */
+  --primary-hover: #1E2A6F;
+  --bg-color: #F4F7FB; /* Very light gray/blue background para umangat yung cards */
+  --card-bg: #FFFFFF;
+  --text-main: #1F2937;
+  --text-muted: #6B7280;
+  --border-light: #E5E7EB;
+  --success-bg: #ECFDF5;
+  --success-text: #059669;
+}
+
+body {
+  /* Gagamit tayo ng modern system fonts para mukhang native app */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  width: 340px;
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  overflow: hidden; /* No scrollbar */
+  -webkit-font-smoothing: antialiased; /* Mas malinaw na text rendering */
+}
+
+.container {
+  padding: 16px 20px;
+}
+
+/* Header */
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.subtitle {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin: 0;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.title {
+  font-size: 22px;
+  font-weight: 800;
+  margin: 2px 0 0 0;
+  color: var(--primary-blue);
+  letter-spacing: -0.5px;
+}
+
+/* Status Badge - Solid background na imbes na border lang */
+.status-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 20px;
+  background-color: var(--success-bg);
+  color: var(--success-text);
+  box-shadow: 0 2px 4px rgba(5, 150, 105, 0.1);
+  border: none;
+}
+
+.status-badge.off {
+  background-color: #F3F4F6;
+  color: var(--text-muted);
+  box-shadow: none;
+}
+
+/* Cards - Mas soft yung shadow, walang harsh borders */
+.card {
+  background-color: var(--card-bg);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0,0,0,0.02);
+}
+
+.flex-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.card h2 {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0 0 6px 0;
+  color: var(--text-main);
+}
+
+.card p {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Toggle Switch - Mas smooth na animation */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 42px;
+  height: 24px;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: #D1D5DB;
+  transition: .3s cubic-bezier(0.4, 0.0, 0.2, 1);
+  border-radius: 24px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .3s cubic-bezier(0.4, 0.0, 0.2, 1);
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+input:checked + .slider {
+  background-color: var(--primary-blue);
+}
+
+input:checked + .slider:before {
+  transform: translateX(18px);
+}
+
+/* Status Section */
+.alert-success {
+  background-color: var(--success-bg);
+  color: var(--success-text);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 10px;
+  border-radius: 8px;
+  margin: 10px 0 16px 0;
+  text-align: center;
+  border: 1px solid rgba(5, 150, 105, 0.2);
+}
+
+/* Stats Grid - Nilagyan ng very light gray bg yung bawat box */
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.stat-box {
+  background-color: #F9FAFB;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.stat-value {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--primary-blue);
+}
+
+/* Buttons - May hover effects at shadows na */
+.button-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.btn-primary {
+  background-color: var(--primary-blue);
+  color: white;
+  box-shadow: 0 4px 10px rgba(43, 60, 155, 0.25);
+}
+
+.btn-primary:hover {
+  background-color: var(--primary-hover);
+  transform: translateY(-1px); /* Umaangat ng slight kapag tinapatan ng mouse */
+  box-shadow: 0 6px 12px rgba(43, 60, 155, 0.35);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-outline {
+  background-color: white;
+  color: var(--text-main);
+  border: 1px solid var(--border-light);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+
+.btn-outline:hover {
+  background-color: #F3F4F6;
+  border-color: #D1D5DB;
+}

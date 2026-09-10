@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "BR1DG3",
+  "version": "1.0",
+  "description": "Automatic accessibility repair extension.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Open BR1DG3"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ]
+}
