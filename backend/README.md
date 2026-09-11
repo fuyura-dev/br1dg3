@@ -1,5 +1,10 @@
 # BR1DG3 Backend
 
+## Docs
+
+* [**App**](./app/README.md) - Overview of structure
+* [**API**](./app/api/README.md) - Request and response schemas
+
 ## Setup
 ```
 cd backend
