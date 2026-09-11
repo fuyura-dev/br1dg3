@@ -1,6 +1,5 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from typing import List
 
 router = APIRouter()
 
@@ -19,8 +18,8 @@ class GraphRequest(BaseModel):
     html: str
 
 class GraphResponse(BaseModel):
-    nodes: List[GraphNode]
-    links: List[GraphLink]
+    nodes: list[GraphNode]
+    links: list[GraphLink]
 
 
 @router.post("/graph", response_model=GraphResponse)

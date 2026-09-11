@@ -1,6 +1,5 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from typing import List
 
 router = APIRouter()
 
@@ -9,7 +8,7 @@ router = APIRouter()
 class Issue(BaseModel):
     id: str                     # violations.id
     impact: str                 # violations.nodes.impact
-    tags: List[str]= []         # violations.tags
+    tags: list[str]= []         # violations.tags
     description: str            # violations.description
     html_target: str            # violations.nodes.html
     help: str                   # violations.help
@@ -22,7 +21,7 @@ class ScanRequest(BaseModel):
 
 class ScanResponse(BaseModel):
     total_issues: int
-    issues: List[Issue]
+    issues: list[Issue]
 
 
 @router.post("/scan", response_model=ScanResponse)
