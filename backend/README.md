@@ -32,6 +32,7 @@ uvicorn app.main:app
 
 ## API Endpoints
 * Backend API: `http://localhost:8000`
+* Interactive API Docs: `http://localhost:8000/docs`
 
 More Details: [API README](./app/api/README.md)
 
