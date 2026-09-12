@@ -2,6 +2,7 @@ import networkx as nx
 from bs4 import BeautifulSoup, Tag
 
 from app.services.sdg.extractors.label_input import extract_label_input_edges
+from app.services.sdg.extractors.aria import extract_aria_edges
 
 class SDGBuilder:
     def __init__(self, html: str):
@@ -33,6 +34,11 @@ class SDGBuilder:
 
 
     def _build_edges(self):
+        # 1. ARIA References
+        aria_edges = extract_aria_edges(self.soup, self.element_to_id)
+        self._add_edges(aria_edges)
+
+        # 2. Label-input connections
         label_edges = extract_label_input_edges(self.soup, self.element_to_id)
         self._add_edges(label_edges)
 
@@ -64,3 +70,32 @@ class SDGBuilder:
         for source, target, relation in edges:
             self.graph.add_edge(source, target, relation=relation)
 
+
+if __name__ == "__main__":
+    sample = """
+    <div>
+        <label for="search-input">Search Site</label>
+        <input type="text" id="search-input">
+        <h2 id="modal-title">Delete Account</h2>
+        <p id="modal-desc">This action is permanent.</p>
+        <button id="del-btn" aria-controls="confirm-modal" aria-describedby="modal-desc">
+            Delete
+        </button>
+        <div id="confirm-modal" role="dialog" aria-labelledby="modal-title">
+            Are you sure?
+        </div>
+    </div>
+"""
+
+    builder = SDGBuilder(sample)
+    graph_data = builder.to_dict()
+
+    print(f"\nNODES ({len(graph_data['nodes'])})")
+
+    for node in graph_data["nodes"]:
+        print(f"  - {node['id']:<18} {node['label']}")
+
+    print(f"\nEDGES ({len(graph_data['edges'])}):")
+
+    for edge in graph_data["edges"]:
+        print(f"  - {edge['source']:<18} --[ {edge['relation']:<18} ] -> {edge['target']}")
