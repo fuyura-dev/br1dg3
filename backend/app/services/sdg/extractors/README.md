@@ -1,6 +1,6 @@
-- [ ] 1. Aria References
+- [x] 1. Aria References
 - [x] 2. Label-input connections
-- [ ] 3. Heading relationships
+- [x] 3. Heading relationships
 - [ ] 4. Landmark structure
 - [ ] 5. Parent-child relationships
 - [ ] 6. Focus-related relationships

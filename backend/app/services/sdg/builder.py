@@ -3,6 +3,8 @@ from bs4 import BeautifulSoup, Tag
 
 from app.services.sdg.extractors.label_input import extract_label_input_edges
 from app.services.sdg.extractors.aria import extract_aria_edges
+from app.services.sdg.extractors.headings import extract_heading_edges
+
 
 class SDGBuilder:
     def __init__(self, html: str):
@@ -42,6 +44,10 @@ class SDGBuilder:
         label_edges = extract_label_input_edges(self.soup, self.element_to_id)
         self._add_edges(label_edges)
 
+        # 3. Heading relationships
+        heading_edges = extract_heading_edges(self.soup, self.element_to_id)
+        self._add_edges(heading_edges)
+
 
     def to_dict(self) -> dict:
         nodes = []
@@ -74,16 +80,12 @@ class SDGBuilder:
 if __name__ == "__main__":
     sample = """
     <div>
-        <label for="search-input">Search Site</label>
-        <input type="text" id="search-input">
-        <h2 id="modal-title">Delete Account</h2>
-        <p id="modal-desc">This action is permanent.</p>
-        <button id="del-btn" aria-controls="confirm-modal" aria-describedby="modal-desc">
-            Delete
-        </button>
-        <div id="confirm-modal" role="dialog" aria-labelledby="modal-title">
-            Are you sure?
-        </div>
+        <h1>asdadsa</h1>
+        <h2>aagds</h2>
+        <h3>asdfg</h3>
+        <h3>asdfgaa</h3>
+        <h2>asdgfa</h2>
+        <h3>asfw3a</h3>
     </div>
 """
 
