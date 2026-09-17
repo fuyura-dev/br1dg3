@@ -6,6 +6,7 @@ from app.services.sdg.extractors.aria import extract_aria_edges
 from app.services.sdg.extractors.headings import extract_heading_edges
 from app.services.sdg.extractors.parent_child import extract_parent_child_edges
 from app.services.sdg.extractors.forms import extract_form_group_edges
+from app.services.sdg.extractors.id_refs import extract_id_reference_edges
 
 
 class SDGBuilder:
@@ -62,6 +63,10 @@ class SDGBuilder:
         form_group_edges = extract_form_group_edges(self.soup, self.element_to_id)
         self._add_edges(form_group_edges)
 
+        # 8. ID References
+        id_ref_edges = extract_id_reference_edges(self.soup, self.element_to_id)
+        self._add_edges(id_ref_edges)
+
 
     def to_dict(self) -> dict:
         nodes = []
@@ -94,20 +99,23 @@ class SDGBuilder:
 if __name__ == "__main__":
     sample = """
     <div>
-        <form>
-            <fieldset>
-                <legend>Account Info</legend>
-                <input type="text" name="username">
-            </fieldset>
-            <fieldset>
-                <legend>Subscription</legend>
-                <input type="radio" name="plan" value="free">
-                <input type="radio" name="plan" value="pro">
-            </fieldset>
-            <button type="submit">Submit</button>
-        </form>
-        <input type="radio" name="gender" value="m">
-        <input type="radio" name="gender" value="f">
+        <a href="#main-content">Skip to content</a>
+        <!-- Table with headers attribute -->
+        <table>
+            <tr>
+                <th id="col-price">Price</th>
+            </tr>
+            <tr>
+                <td headers="col-price">$10</td>
+            </tr>
+        </table>
+        <!-- Input pointing to datalist -->
+        <input list="fruit-options">
+        <datalist id="fruit-options">
+            <option value="Apple">
+        </datalist>
+        <!-- Main content anchor target -->
+        <main id="main-content"></main>
     </div>
 """
 

@@ -5,7 +5,7 @@
 - [x] 5. Parent-child relationships
 - [ ] 6. Focus-related relationships
 - [x] 7. Form/group relationships
-- [ ] 8. ID references
+- [x] 8. ID references
 
 
 ## Known Bugs

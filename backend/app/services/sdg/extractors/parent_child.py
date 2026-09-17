@@ -21,6 +21,8 @@ CONTAINER_RULES = {
 
     "select": ["optgroup", "option"],
     "optgroup": ["option"],
+
+    "datalist": ["option"]
 }
 
 
