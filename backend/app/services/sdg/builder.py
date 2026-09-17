@@ -4,6 +4,8 @@ from bs4 import BeautifulSoup, Tag
 from app.services.sdg.extractors.label_input import extract_label_input_edges
 from app.services.sdg.extractors.aria import extract_aria_edges
 from app.services.sdg.extractors.headings import extract_heading_edges
+from app.services.sdg.extractors.parent_child import extract_parent_child_edges
+from app.services.sdg.extractors.forms import extract_form_group_edges
 
 
 class SDGBuilder:
@@ -48,6 +50,18 @@ class SDGBuilder:
         heading_edges = extract_heading_edges(self.soup, self.element_to_id)
         self._add_edges(heading_edges)
 
+        # 4.
+
+        # 5. Parent-child relationships
+        parent_child_edges = extract_parent_child_edges(self.soup, self.element_to_id)
+        self._add_edges(parent_child_edges)
+
+        # 6.
+
+        # 7. Form/group relationships
+        form_group_edges = extract_form_group_edges(self.soup, self.element_to_id)
+        self._add_edges(form_group_edges)
+
 
     def to_dict(self) -> dict:
         nodes = []
@@ -80,12 +94,20 @@ class SDGBuilder:
 if __name__ == "__main__":
     sample = """
     <div>
-        <h1>asdadsa</h1>
-        <h2>aagds</h2>
-        <h3>asdfg</h3>
-        <h3>asdfgaa</h3>
-        <h2>asdgfa</h2>
-        <h3>asfw3a</h3>
+        <form>
+            <fieldset>
+                <legend>Account Info</legend>
+                <input type="text" name="username">
+            </fieldset>
+            <fieldset>
+                <legend>Subscription</legend>
+                <input type="radio" name="plan" value="free">
+                <input type="radio" name="plan" value="pro">
+            </fieldset>
+            <button type="submit">Submit</button>
+        </form>
+        <input type="radio" name="gender" value="m">
+        <input type="radio" name="gender" value="f">
     </div>
 """
 

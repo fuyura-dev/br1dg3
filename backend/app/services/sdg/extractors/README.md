@@ -2,7 +2,11 @@
 - [x] 2. Label-input connections
 - [x] 3. Heading relationships
 - [ ] 4. Landmark structure
-- [ ] 5. Parent-child relationships
+- [x] 5. Parent-child relationships
 - [ ] 6. Focus-related relationships
-- [ ] 7. Form/group relationships
+- [x] 7. Form/group relationships
 - [ ] 8. ID references
+
+
+## Known Bugs
+- `builder.py`: tags with same text counts as one, eg., `<h1>sample</h1><h1>sample</h1>` will only read single h1
