@@ -1,5 +1,6 @@
 from fastapi import APIRouter
-from app.api import scan, repair, graph
+
+from app.api import graph, repair, scan
 
 api_router = APIRouter()
 

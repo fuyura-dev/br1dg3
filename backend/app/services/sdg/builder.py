@@ -1,12 +1,12 @@
 import networkx as nx
 from bs4 import BeautifulSoup, Tag
 
-from app.services.sdg.extractors.label_input import extract_label_input_edges
 from app.services.sdg.extractors.aria import extract_aria_edges
-from app.services.sdg.extractors.headings import extract_heading_edges
-from app.services.sdg.extractors.parent_child import extract_parent_child_edges
 from app.services.sdg.extractors.forms import extract_form_group_edges
+from app.services.sdg.extractors.headings import extract_heading_edges
 from app.services.sdg.extractors.id_refs import extract_id_reference_edges
+from app.services.sdg.extractors.label_input import extract_label_input_edges
+from app.services.sdg.extractors.parent_child import extract_parent_child_edges
 
 
 class SDGBuilder:

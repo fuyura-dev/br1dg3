@@ -1,10 +1,9 @@
-from app.services.detection.preprocess import preprocess
 
+import json
 from pathlib import Path
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-import json
 
 from app.config import settings
 
@@ -66,7 +65,7 @@ def detect(html: str):
 
     driver.get('data:text/html,')
 
-    driver.execute_script(f'document.documentElement.innerHTML = arguments[0]', html)
+    driver.execute_script('document.documentElement.innerHTML = arguments[0]', html)
     driver.execute_script(AXE_SCRIPT)
 
     violations = driver.execute_async_script(
