@@ -1,13 +1,25 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from app.services.detection.detect import detect
+from app.services.sdg.builder import SDGBuilder
+
 router = APIRouter()
+
+class NodeIssue(BaseModel):
+    id: str
+    impact: str | None = None
+    description: str | None = None
+    help: str | None = None
+    help_url: str | None = None
+    html: str | None = None
 
 class GraphNode(BaseModel):
     id: str                     # node-id (generated internally)
     tag: str
     label: str
     has_issue: bool = False
+    issues: list[NodeIssue] = []
 
 class GraphLink(BaseModel):
     source: str
@@ -24,18 +36,11 @@ class GraphResponse(BaseModel):
 
 @router.post("/graph", response_model=GraphResponse)
 async def get_dependency_graph(request: GraphRequest):
+    violations = detect(request.html)
 
-    sample_nodes = [
-        GraphNode(id="n1", tag="form", label="<form id='login-form'>", has_issue=False),
-        GraphNode(id="n2", tag="label", label="<label for='email'>", has_issue=False),
-        GraphNode(id="n3", tag="input", label="<input id='email'>", has_issue=True),
-        GraphNode(id="n4", tag="button", label="<button type='submit'>", has_issue=False),
-    ]
-    sample_links = [
-        GraphLink(source="n1", target="n3", relation="parent_child"),
-        GraphLink(source="n1", target="n4", relation="parent_child"),
-        GraphLink(source="n2", target="n3", relation="label_input"),
-    ]
+    builder = SDGBuilder(request.html, violations=violations)
+    graph_data = builder.to_dict()
 
-    return GraphResponse(nodes=sample_nodes, links=sample_links)
+
+    return GraphResponse(nodes=graph_data["nodes"], links=graph_data["edges"])
 

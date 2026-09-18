@@ -34,15 +34,3 @@ pip install -r requirements.txt
 ```
 uvicorn app.main:app
 ```
-
-## API Endpoints
-* Backend API: `http://localhost:8000`
-* Interactive API Docs: `http://localhost:8000/docs`
-
-More Details: [API README](./app/api/README.md)
-
-| Method | Endpoint |
-| :--- | :--- |
-| **POST** | `/api/scan` |
-| **POST** | `/api/repair` |
-| **POST** | `/api/graph` |

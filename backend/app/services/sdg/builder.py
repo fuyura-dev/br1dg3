@@ -12,8 +12,9 @@ from app.services.sdg.extractors.parent_child import extract_parent_child_edges
 
 
 class SDGBuilder:
-    def __init__(self, html: str):
+    def __init__(self, html: str, violations: list[dict] | None = None):
         self.html = html
+        self.violations = violations or []
         self.soup = BeautifulSoup(html, "html.parser")
         self.graph = nx.DiGraph()
 
@@ -21,6 +22,8 @@ class SDGBuilder:
 
         self._build_nodes()
         self._build_edges()
+        if self.violations:
+            self._mark_violations()
 
 
     def _build_nodes(self):
@@ -36,7 +39,8 @@ class SDGBuilder:
                 node_id,
                 tag=tag.name,
                 label=display_label,
-                has_issue=False
+                has_issue=False,
+                issues=[],
             )
 
 
@@ -74,6 +78,33 @@ class SDGBuilder:
         self._add_edges(id_ref_edges)
 
 
+    def _mark_violations(self):
+        for violation in self.violations:
+            for node in violation.get("nodes", []):
+                targets = node.get("target", [])
+                matching_tag = None
+
+                for selector in targets:
+                    try:
+                        matching_tag = self.soup.select_one(selector)
+                        if matching_tag:
+                            break
+                    except Exception: # noqa: BLE001, S112
+                        continue
+
+                if matching_tag and matching_tag in self.element_to_id:
+                    node_id = self.element_to_id[matching_tag]
+                    self.graph.nodes[node_id]["has_issue"] = True
+                    self.graph.nodes[node_id]["issues"].append({
+                        "id": violation.get("id"),
+                        "impact": violation.get("impact"),
+                        "description": violation.get("description"),
+                        "help": violation.get("help"),
+                        "help_url": violation.get("helpUrl"),
+                        "html": node.get("html"),
+                    })
+
+
     def to_dict(self) -> dict:
         nodes = []
         for node_id, data in self.graph.nodes(data=True):
@@ -82,6 +113,7 @@ class SDGBuilder:
                 "tag": data.get("tag"),
                 "label": data.get("label"),
                 "has_issue": data.get("has_issue"),
+                "issues": data.get("issues", []),
             })
 
         edges = []

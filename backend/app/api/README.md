@@ -1,5 +1,10 @@
 # API Documentation
 
+> [!NOTE]
+> For the updated request and response schemas, refer to the interactive API documentation when the backend is running:
+> - **Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
+> - **ReDoc**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+> docs below are not updated
 
 ## 1. Scan Endpoint (`POST /api/scan`)
 Scans HTML content for accessibility violations.

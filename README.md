@@ -1,5 +1,9 @@
 # BR1DG3
 
+> [!NOTE]
+> For the updated request and response schemas, refer to the interactive API documentation when the backend is running:
+> - **Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
+> - **ReDoc**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
 
 ## Setup guide
 
@@ -12,7 +16,7 @@ Follow the instructions in the [Backend README](./backend/README.md):
 
 ### 1. Detection
 - [x] Axe-core
-- [ ] Connect to SDG nodes (`has_issue = True`)
+- [x] Connect to SDG nodes (`has_issue = True`)
 
 ### 2. SDG
 - [x] Graph builder
@@ -33,7 +37,7 @@ Follow the instructions in the [Backend README](./backend/README.md):
 
 ### 5. APIs
 - [x] API Skeleton
-- [ ] connect `/api/scan`
-- [ ] connect `/api/graph`
+- [x] connect `/api/scan`
+- [x] connect `/api/graph`
 - [ ] connect `/api/repair`
 - [ ] API for validation and evaluation details
