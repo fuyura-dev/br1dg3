@@ -2,10 +2,12 @@ import networkx as nx
 from bs4 import BeautifulSoup, Tag
 
 from app.services.sdg.extractors.aria import extract_aria_edges
+from app.services.sdg.extractors.focus import extract_focus_edges
 from app.services.sdg.extractors.forms import extract_form_group_edges
 from app.services.sdg.extractors.headings import extract_heading_edges
 from app.services.sdg.extractors.id_refs import extract_id_reference_edges
 from app.services.sdg.extractors.label_input import extract_label_input_edges
+from app.services.sdg.extractors.landmarks import extract_landmark_edges
 from app.services.sdg.extractors.parent_child import extract_parent_child_edges
 
 
@@ -51,13 +53,17 @@ class SDGBuilder:
         heading_edges = extract_heading_edges(self.soup, self.element_to_id)
         self._add_edges(heading_edges)
 
-        # 4.
+        # 4. Landmark Structure
+        landmark_edges = extract_landmark_edges(self.soup, self.element_to_id)
+        self._add_edges(landmark_edges)
 
         # 5. Parent-child relationships
         parent_child_edges = extract_parent_child_edges(self.soup, self.element_to_id)
         self._add_edges(parent_child_edges)
 
-        # 6.
+        # 6. Focus related relationships
+        focus_edges = extract_focus_edges(self.soup, self.element_to_id)
+        self._add_edges(focus_edges)
 
         # 7. Form/group relationships
         form_group_edges = extract_form_group_edges(self.soup, self.element_to_id)
@@ -99,23 +105,11 @@ class SDGBuilder:
 if __name__ == "__main__":
     sample = """
     <div>
-        <a href="#main-content">Skip to content</a>
-        <!-- Table with headers attribute -->
-        <table>
-            <tr>
-                <th id="col-price">Price</th>
-            </tr>
-            <tr>
-                <td headers="col-price">$10</td>
-            </tr>
-        </table>
-        <!-- Input pointing to datalist -->
-        <input list="fruit-options">
-        <datalist id="fruit-options">
-            <option value="Apple">
-        </datalist>
-        <!-- Main content anchor target -->
-        <main id="main-content"></main>
+        <a href="/home">Home</a>
+        <button tabindex="2">Submit</button>
+        <button tabindex="1">Accept</button>
+        <input type="text">
+        <button disabled>Disabled Button</button>
     </div>
 """
 
