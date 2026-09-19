@@ -1,0 +1,71 @@
+.repair-summary {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+  padding: 16px;
+}
+
+.repair-summary__empty {
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+}
+
+.repair-summary__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px 20px;
+}
+
+.repair-summary__grid dt {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  margin-bottom: 3px;
+}
+
+.repair-summary__grid dd {
+  font-size: 13px;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.repair-summary__reason {
+  grid-column: 1 / -1;
+}
+
+.repair-summary__relationships {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--color-text-tertiary);
+}
+
+.repair-summary__relationships ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.repair-summary__relationships code {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  color: var(--color-accent);
+}
+
+@media (max-width: 760px) {
+  .repair-summary__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .repair-summary__reason {
+    grid-column: auto;
+  }
+}
