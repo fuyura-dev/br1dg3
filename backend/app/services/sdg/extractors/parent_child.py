@@ -18,6 +18,8 @@ CONTAINER_RULES = {
     "tbody": ["tr"],
     "tfoot": ["tr"],
     "tr": ["th", "td"],
+    "th": ["table"],
+    "td": ["table"],
 
     "select": ["optgroup", "option"],
     "optgroup": ["option"],

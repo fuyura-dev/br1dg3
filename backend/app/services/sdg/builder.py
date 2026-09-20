@@ -39,6 +39,7 @@ class SDGBuilder:
                 node_id,
                 tag=tag.name,
                 label=display_label,
+                html=str(tag),
                 has_issue=False,
                 issues=[],
             )
