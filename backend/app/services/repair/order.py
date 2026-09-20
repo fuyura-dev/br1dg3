@@ -2,7 +2,7 @@ import networkx as nx
 
 
 def order_violations_by_dependency(
-        graph: nx.DiGraph,
+        graph: nx.MultiDiGraph,
         violated_node_ids: list[str]
 ):
     if not violated_node_ids:

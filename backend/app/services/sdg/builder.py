@@ -16,7 +16,7 @@ class SDGBuilder:
         self.html = html
         self.violations = violations or []
         self.soup = BeautifulSoup(html, "html.parser")
-        self.graph = nx.DiGraph()
+        self.graph = nx.MultiDiGraph()
 
         self.element_to_id: dict[Tag, str] = {}
 
@@ -132,18 +132,90 @@ class SDGBuilder:
 
     def _add_edges(self, edges: list[tuple]):
         for source, target, relation in edges:
-            self.graph.add_edge(source, target, relation=relation)
+            self.graph.add_edge(source, target, key=relation, relation=relation)
 
 
 if __name__ == "__main__":
     sample = """
-    <div>
-        <a href="/home">Home</a>
-        <button tabindex="2">Submit</button>
-        <button tabindex="1">Accept</button>
-        <input type="text">
-        <button disabled>Disabled Button</button>
+<header>
+    <nav aria-label="Main menu">
+        <ul>
+            <li><a href="#content">Skip to content</a></li>
+            <li>Products
+                <ul>
+                    <li><a href="/new">New arrivals</a></li>
+                    <li><a href="/sale">On sale</a></li>
+                </ul>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+<main id="content">
+    <h1>Store</h1>
+
+    <h2>Search</h2>
+    <div role="search">
+        <label for="q">Query</label>
+        <input type="text" id="q" list="suggestions">
+        <datalist id="suggestions">
+            <option value="shoes">
+            <option value="boots">
+        </datalist>
     </div>
+
+    <h2>Account form</h2>
+    <form id="signup">
+        <fieldset>
+            <legend>Personal details</legend>
+            <label>Name <input type="text" name="fullname"></label>
+            <label id="email-label" for="email">Email</label>
+            <input type="email" id="email" aria-labelledby="email-label" aria-describedby="email-hint">
+            <span id="email-hint">We never share it</span>
+        </fieldset>
+        <input type="radio" name="plan" value="basic">
+        <input type="radio" name="plan" value="pro">
+        <select name="country">
+            <optgroup label="Asia">
+                <option value="ph">Philippines</option>
+                <option value="jp">Japan</option>
+            </optgroup>
+        </select>
+        <button type="submit" aria-controls="result">Send</button>
+    </form>
+    <input type="text" name="outside" form="signup">
+    <div id="result">Result here</div>
+
+    <h4>Skipped level</h4>
+
+    <h2>Data</h2>
+    <table>
+        <thead>
+            <tr><th id="h-item">Item</th><th id="h-qty">Qty</th></tr>
+        </thead>
+        <tbody>
+            <tr><td headers="h-item">Apples</td><td headers="h-qty">3</td></tr>
+            <tr>
+                <td headers="h-item">Pears</td>
+                <td><table><tr><td>Nested cell</td></tr></table></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <dl><dt>Term</dt><dd>Definition</dd></dl>
+
+    <aside>
+        <h3>Related</h3>
+        <a href="#result" aria-controls="result">Jump to result</a>
+    </aside>
+</main>
+
+<footer>
+    <button tabindex="2">Second</button>
+    <button tabindex="1">First</button>
+    <button disabled>Off</button>
+    <input type="hidden" name="token">
+</footer>
 """
 
     builder = SDGBuilder(sample)
