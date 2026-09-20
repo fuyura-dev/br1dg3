@@ -11,6 +11,31 @@ from app.services.sdg.extractors.landmarks import extract_landmark_edges
 from app.services.sdg.extractors.parent_child import extract_parent_child_edges
 
 
+class ElementIds:
+    def __init__(self):
+        self._by_element = {}
+        self._by_node = {}
+    
+    def __setitem__(self, tag, node_id):
+        self._by_element[id(tag)] = node_id
+        self._by_node[node_id] = tag
+
+    def __getitem__(self, tag):
+        return self._by_element[id(tag)]
+
+    def __contains__(self, tag):
+        return id(tag) in self._by_element
+
+    def __len__(self):
+        return len(self._by_element)
+
+    def get(self, tag, default=None):
+        return self._by_element.get(id(tag), default)
+
+    def element(self, node_id):
+        return self._by_node[node_id]
+
+
 class SDGBuilder:
     def __init__(self, html: str, violations: list[dict] | None = None):
         self.html = html
@@ -18,7 +43,7 @@ class SDGBuilder:
         self.soup = BeautifulSoup(html, "html.parser")
         self.graph = nx.MultiDiGraph()
 
-        self.element_to_id: dict[Tag, str] = {}
+        self.element_to_id = ElementIds()
 
         self._build_nodes()
         self._build_edges()
