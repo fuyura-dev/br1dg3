@@ -1,5 +1,5 @@
 import { formatNodeLabel } from "../../utils/format.js";
-import "./SdgContextPanel.css";
+import '../../styles/SdgContextPanel.css';
 
 function RelationshipGroup({ title, items, emptyLabel }) {
   return (

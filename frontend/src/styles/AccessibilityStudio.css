@@ -31,7 +31,8 @@
   display: grid;
   grid-template-columns: 1.4fr 1fr 1fr;
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
+  height: 75vh;
 }
 
 @media (max-width: 1100px) {

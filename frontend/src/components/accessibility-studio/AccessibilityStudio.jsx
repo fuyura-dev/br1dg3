@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { useAccessibilityStudio } from "../../hooks/useAccessibilityStudio.js";
+
 import HtmlEditor from "./HtmlEditor.jsx";
+import SdgGraphModal from "./SdgGraphModal.jsx";
+import DiffViewer from "./DiffViewer.jsx";
+
 import ViolationsPanel from "./ViolationsPanel.jsx";
 import SdgContextPanel from "./SdgContextPanel.jsx";
-import SdgGraphModal from "./SdgGraphModal.jsx";
 import RepairSummary from "./RepairSummary.jsx";
-import DiffViewer from "./DiffViewer.jsx";
 import EvaluationSummary from "./EvaluationSummary.jsx";
-import "./AccessibilityStudio.css";
+import '../../styles/AccessibilityStudio.css';
 
 function AccessibilityStudio() {
   const {
@@ -26,36 +28,31 @@ function AccessibilityStudio() {
   const [isGraphOpen, setGraphOpen] = useState(false);
 
   if (status === "loading") {
-    return (
-      <div className="accessibility-studio accessibility-studio--message">
-        <p>{"Loading repair workspace\u2026"}</p>
-      </div>
-    );
+    return <div className="accessibility-studio"><p>Loading repair workspace...</p></div>;
   }
 
   if (status === "error") {
-    return (
-      <div className="accessibility-studio accessibility-studio--message">
-        <p>The repair workspace could not be loaded.</p>
-      </div>
-    );
+    return <div className="accessibility-studio"><p>Error loading workspace.</p></div>;
   }
 
   return (
     <div className="accessibility-studio">
       <header className="accessibility-studio__header">
-        <h1>{"BR1DG3 \u2014 Accessibility Repair Studio"}</h1>
-        <p>SDG-guided repair analysis workspace</p>
+        <h1>BR1DG3 — Accessibility Repair Studio (TESTING MODE)</h1>
       </header>
 
       <EvaluationSummary metrics={evaluationMetrics} />
 
       <div className="accessibility-studio__workspace">
+        
         <HtmlEditor
-          title="HTML Editor (Original)"
-          code={htmlSource}
-          highlightedLine={selectedViolation?.line ?? null}
+          initialHtml={htmlSource}
+          isScanning={status === "loading"}
+          onRunScan={(newHtml) => {
+            console.log("Trigger backend scan here with:", newHtml);
+          }}
         />
+
         <ViolationsPanel
           violations={violations}
           selectedId={selectedViolation?.id ?? null}
@@ -70,8 +67,13 @@ function AccessibilityStudio() {
 
       <RepairSummary violation={selectedViolation} repair={repair} />
 
-      <DiffViewer original={htmlSource} repaired={repairedHtml} focusLine={selectedViolation?.line ?? null} />
+      {/* IBINALIK NA ANG TOTOONG DIFF VIEWER (Inalis na ang placeholder) */}
+      <DiffViewer 
+        original={htmlSource} 
+        repaired={repairedHtml} 
+      />
 
+      {/* SdgGraphModal */}
       {isGraphOpen && (
         <SdgGraphModal
           violation={selectedViolation}
@@ -82,6 +84,7 @@ function AccessibilityStudio() {
           onSelectViolation={selectViolation}
         />
       )}
+
     </div>
   );
 }

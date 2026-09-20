@@ -1,10 +1,10 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
 
-// https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
-  server: {
-    port: 5173,
+  resolve: {
+    // ITO ANG FIX: Pipilitin nito ang Vite na gumamit ng iisang React lang
+    dedupe: ['react', 'react-dom'], 
   },
-});
+})

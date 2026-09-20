@@ -1,5 +1,5 @@
 import EvaluationMetric from "./EvaluationMetric.jsx";
-import "./EvaluationSummary.css";
+import '../../styles/EvaluationSummary.css';
 
 function EvaluationSummary({ metrics }) {
   return (

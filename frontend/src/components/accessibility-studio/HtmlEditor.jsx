@@ -1,41 +1,58 @@
-import { tokenizeHtmlLine } from "../../utils/highlightHtml.js";
-import "./HtmlEditor.css";
+import React, { useState, useEffect } from 'react';
+import Editor from '@monaco-editor/react';
+import '../../styles/HtmlEditor.css';
 
-function HtmlEditor({ title, code, highlightedLine }) {
-  const lines = code.split("\n");
+const HtmlEditor = ({ initialHtml, onRunScan, isScanning }) => {
+  const [code, setCode] = useState(initialHtml || '');
+
+  // Keep editor in sync if the parent updates the initial HTML
+  useEffect(() => {
+    if (initialHtml) {
+      setCode(initialHtml);
+    }
+  }, [initialHtml]);
+
+  const handleEditorChange = (value) => {
+    setCode(value);
+  };
+
+  const handleScanClick = () => {
+    if (onRunScan) {
+      onRunScan(code);
+    }
+  };
 
   return (
-    <section className="html-editor" aria-label={title}>
-      <header className="panel-header">
-        <h2>{title}</h2>
-        <span className="html-editor__tag">HTML</span>
-      </header>
-      <pre className="html-editor__code">
-        {lines.map((line, index) => {
-          const lineNumber = index + 1;
-          const tokens = tokenizeHtmlLine(line);
-          const isActive = lineNumber === highlightedLine;
-          return (
-            <div
-              key={lineNumber}
-              className={`html-editor__line${isActive ? " html-editor__line--active" : ""}`}
-            >
-              <span className="html-editor__line-number">{lineNumber}</span>
-              <span className="html-editor__line-content">
-                {tokens.length === 0
-                  ? "\u00A0"
-                  : tokens.map((token, tokenIndex) => (
-                      <span key={tokenIndex} className={`token token--${token.type}`}>
-                        {token.text}
-                      </span>
-                    ))}
-              </span>
-            </div>
-          );
-        })}
-      </pre>
-    </section>
+    <div className="html-editor-wrapper">
+      <div className="editor-header">
+        <h3>HTML Editor</h3>
+        <button 
+          className="run-scan-button" 
+          onClick={handleScanClick}
+          disabled={isScanning || !code.trim()}
+        >
+          {isScanning ? 'Scanning...' : 'Run Scan'}
+        </button>
+      </div>
+      
+      <div className="editor-container">
+        <Editor
+          height="100%"
+          defaultLanguage="html"
+          theme="vs-dark"
+          value={code}
+          onChange={handleEditorChange}
+          options={{
+            minimap: { enabled: false },
+            wordWrap: 'on',
+            formatOnPaste: true,
+            fontSize: 14,
+            tabSize: 2,
+          }}
+        />
+      </div>
+    </div>
   );
-}
+};
 
 export default HtmlEditor;

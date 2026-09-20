@@ -1,5 +1,5 @@
 import StatusBadge from "./StatusBadge.jsx";
-import "./RepairSummary.css";
+import '../../styles/RepairSummary.css';
 
 function RepairSummary({ violation, repair }) {
   if (!violation || !repair) {

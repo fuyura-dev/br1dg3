@@ -1,5 +1,5 @@
 import ViolationItem from "./ViolationItem.jsx";
-import "./ViolationsPanel.css";
+import '../../styles/ViolationsPanel.css';
 
 function ViolationsPanel({ violations, selectedId, onSelect }) {
   return (
