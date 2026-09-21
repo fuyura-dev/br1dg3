@@ -1,24 +1,10 @@
 from collections import defaultdict
 from dataclasses import dataclass
 
-from bs4.formatter import HTMLFormatter
+from app.services.repair.patch import MARKER, outer_html
 
 VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
 SKIP_ATTRS = {"class", "style"}          # dropped from CONTEXT nodes only (also every data-* attribute)
-
-
-class _AsWritten(HTMLFormatter):
-    """Like str(tag), but keeps the attribute order and writes <input ...> instead of <input .../>."""
-
-    def attributes(self, tag):
-        return [(k, None if v == "" else v) for k, v in tag.attrs.items()]   # None -> bare attribute
-
-
-_AS_WRITTEN = _AsWritten(void_element_close_prefix="")
-
-
-def _outer_html(element):
-    return element.decode(formatter=_AS_WRITTEN)
 
 
 @dataclass
@@ -78,6 +64,7 @@ Return ONLY the repaired target element: exactly one HTML element and nothing el
 Rules:
 {COMMON_RULES}
 - Do not change the target's id attribute; other elements refer to it.
+- Keep every {MARKER} attribute exactly as it is, on the target and on any child element (internal tracking marker).
 - The related elements are read-only context. Do not output them. Use them so the fix fits the page
   (for example reuse existing label or heading text, keep landmark names distinct)."""
 
@@ -185,6 +172,7 @@ def _relationship_lines(ctx, target, label):
 
 
 def build_sdg_prompt(ctx, element_ids):
+    """ctx: the context graph from ContextExtractor.extract(); element_ids: the builder's ElementIds."""
     target = ctx.graph["target"]
 
     # labels: [T] for the target, [1], [2]... for the rest in document order
@@ -199,7 +187,7 @@ def build_sdg_prompt(ctx, element_ids):
 
     parts = [
         "## Violations on the target element\n" + violations,
-        f"## Target element [T]\n{_outer_html(element_ids.element(target))}",
+        f"## Target element [T]\n{outer_html(element_ids.element(target))}",
     ]
 
     if others:
