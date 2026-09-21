@@ -237,18 +237,30 @@
   }
 
   async function handleViewSummary() {
-    const restoreButton = withButtonLoading(elements.viewSummaryBtn, 'Loading...');
+    const restoreButton = withButtonLoading(elements.viewSummaryBtn, 'Opening Studio...');
 
     try {
       const tab = await getActiveTab();
+      // Kunin ang HTML ng kasalukuyang website
       const html = await getTabHtml(tab.id);
-      const { nodes, links } = await api.graph(html);
 
-      console.log('Semantic Dependency Graph Nodes:', nodes);
-      console.log('Semantic Dependency Graph Links:', links);
-      alert(`Graph generated! Found ${nodes.length} nodes and ${links.length} relationships. Check the extension console for detailed JSON.`);
+      // Buksan ang React Bridge Studio sa bagong tab
+      chrome.tabs.create({ url: 'http://localhost:5173/' }, (newTab) => {
+        // Lagyan ng delay para makapag-load muna ang React bago ipasa ang data
+        setTimeout(() => {
+          chrome.scripting.executeScript({
+            target: { tabId: newTab.id },
+            func: (sourceHtml) => {
+              // I-save ang HTML sa localStorage ng React app para mabasa nito
+              localStorage.setItem('br1dg3_source_html', sourceHtml);
+            },
+            args: [html],
+          });
+        }, 1500); // 1.5 seconds delay
+      });
+
     } catch (error) {
-      showError('Error loading graph summary data.');
+      showError('Error transferring data to Bridge Studio.');
     } finally {
       restoreButton();
     }

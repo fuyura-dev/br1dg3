@@ -1,12 +1,5 @@
 // Mock data for the Accessibility Repair Studio.
-//
-// This file plays the role the future BR1DG3 backend/LLM pipeline will
-// play once connected: it is the single source of the workspace's HTML
-// documents, detected violations, SDG relationship graphs (both the
-// per-violation context and the full document graph), generated repairs,
-// and evaluation scores. Every component reads this shape only through
-// `services/accessibilityRepairService.js`, so replacing this file with
-// real API responses later requires no component changes.
+// Aligned with the API's Directed Graph Schema and Axe-core violation outputs.
 
 export const htmlSource = `<!DOCTYPE html>
 <html lang="en">
@@ -89,92 +82,105 @@ export const repairedHtml = `<!DOCTYPE html>
   </body>
 </html>`;
 
-// Flat representation of the whole document's DOM hierarchy, used by the
-// SDG graph visualizer's "Full document" view. Each node names its parent
-// by id; nodes tied to a detected violation carry violationId so the
-// visualizer can highlight them. This mirrors `htmlSource` above, not
-// `repairedHtml` -- the graph shows the structure the violations were
-// detected against.
+// Aligned with backend API schema: { nodes: [], links: [] }
 export const documentGraph = {
-  rootId: "html",
   nodes: [
-    { id: "html", label: "html" },
-    { id: "head", label: "head", parent: "html" },
-    { id: "meta", label: "meta", parent: "head" },
-    { id: "title", label: "title", parent: "head" },
-    { id: "body", label: "body", parent: "html" },
-    { id: "header", label: "header", parent: "body" },
-    { id: "h1", label: "h1", parent: "header" },
-    { id: "nav", label: "nav", parent: "header" },
-    { id: "a-home", label: "a", parent: "nav" },
-    { id: "a-help", label: "a", parent: "nav" },
-    { id: "content", label: "div.content", parent: "body", violationId: "V004" },
-    { id: "h3", label: "h3", parent: "content", violationId: "V003" },
-    { id: "form", label: "form#contact-form", parent: "content" },
-    { id: "field-name", label: "div.field", parent: "form" },
-    { id: "input-name", label: "input#full-name", parent: "field-name", violationId: "V001" },
-    { id: "field-email", label: "div.field", parent: "form" },
-    { id: "label-email", label: "label", parent: "field-email" },
-    { id: "input-email", label: "input#email", parent: "field-email" },
-    { id: "field-message", label: "div.field", parent: "form" },
-    { id: "textarea", label: "textarea#message", parent: "field-message" },
-    { id: "button", label: "button#submit-button", parent: "form", violationId: "V002" },
-    { id: "svg", label: "svg", parent: "button" },
-    { id: "footer", label: "footer", parent: "body" },
-    { id: "p-copy", label: "p", parent: "footer" },
+    { id: "html", tag: "html", label: "html", has_issue: false },
+    { id: "head", tag: "head", label: "head", has_issue: false },
+    { id: "meta", tag: "meta", label: "meta", has_issue: false },
+    { id: "title", tag: "title", label: "title", has_issue: false },
+    { id: "body", tag: "body", label: "body", has_issue: false },
+    { id: "header", tag: "header", label: "header", has_issue: false },
+    { id: "h1", tag: "h1", label: "h1", has_issue: false },
+    { id: "nav", tag: "nav", label: "nav", has_issue: false },
+    { id: "a-home", tag: "a", label: "a", has_issue: false },
+    { id: "a-help", tag: "a", label: "a", has_issue: false },
+    { id: "content", tag: "div", label: "div.content", has_issue: true, violationId: "V004" },
+    { id: "h3", tag: "h3", label: "h3", has_issue: true, violationId: "V003" },
+    { id: "form", tag: "form", label: "form#contact-form", has_issue: false },
+    { id: "field-name", tag: "div", label: "div.field", has_issue: false },
+    { id: "input-name", tag: "input", label: "input#full-name", has_issue: true, violationId: "V001" },
+    { id: "field-email", tag: "div", label: "div.field", has_issue: false },
+    { id: "label-email", tag: "label", label: "label", has_issue: false },
+    { id: "input-email", tag: "input", label: "input#email", has_issue: false },
+    { id: "field-message", tag: "div", label: "div.field", has_issue: false },
+    { id: "textarea", tag: "textarea", label: "textarea#message", has_issue: false },
+    { id: "button", tag: "button", label: "button#submit-button", has_issue: true, violationId: "V002" },
+    { id: "svg", tag: "svg", label: "svg", has_issue: false },
+    { id: "footer", tag: "footer", label: "footer", has_issue: false },
+    { id: "p-copy", tag: "p", label: "p", has_issue: false },
   ],
+  links: [
+    { source: "html", target: "head", relation: "child" },
+    { source: "html", target: "body", relation: "child" },
+    { source: "head", target: "meta", relation: "child" },
+    { source: "head", target: "title", relation: "child" },
+    { source: "body", target: "header", relation: "child" },
+    { source: "body", target: "content", relation: "child" },
+    { source: "body", target: "footer", relation: "child" },
+    { source: "header", target: "h1", relation: "child" },
+    { source: "header", target: "nav", relation: "child" },
+    { source: "nav", target: "a-home", relation: "child" },
+    { source: "nav", target: "a-help", relation: "child" },
+    { source: "content", target: "h3", relation: "child" },
+    { source: "content", target: "form", relation: "child" },
+    { source: "form", target: "field-name", relation: "child" },
+    { source: "form", target: "field-email", relation: "child" },
+    { source: "form", target: "field-message", relation: "child" },
+    { source: "form", target: "button", relation: "child" },
+    { source: "field-name", target: "input-name", relation: "child" },
+    { source: "field-email", target: "label-email", relation: "child" },
+    { source: "field-email", target: "input-email", relation: "child" },
+    { source: "field-message", target: "textarea", relation: "child" },
+    { source: "button", target: "svg", relation: "child" },
+    { source: "footer", target: "p-copy", relation: "child" }
+  ]
 };
 
+// Aligned with standard Axe-core output schema
 export const violations = [
   {
     id: "V001",
-    severity: "critical",
-    wcag: "1.3.1",
-    element: "input#full-name",
+    ruleId: "label",
+    impact: "critical",
+    target: "input#full-name",
+    html: "<input type=\"text\" id=\"full-name\" name=\"fullName\" placeholder=\"Full name\" />",
     description: "Text input has no programmatically associated label",
-    screenReaderImpact:
-      "Screen reader users hear only \u201cedit text, blank\u201d; the placeholder is not exposed as a label.",
-    line: 20,
+    failureSummary: "Screen reader users hear only 'edit text, blank'; the placeholder is not exposed as a label.",
     status: "applied",
   },
   {
     id: "V002",
-    severity: "critical",
-    wcag: "4.1.2",
-    element: "button#submit-button",
+    ruleId: "button-name",
+    impact: "critical",
+    target: "button#submit-button",
+    html: "<button type=\"submit\" id=\"submit-button\">...</button>",
     description: "Icon-only submit button has no accessible name",
-    screenReaderImpact:
-      "Screen reader users hear only \u201cbutton\u201d with no indication of what it submits.",
-    line: 29,
+    failureSummary: "Screen reader users hear only 'button' with no indication of what it submits.",
     status: "applied",
   },
   {
     id: "V003",
-    severity: "moderate",
-    wcag: "1.3.1",
-    element: "h3 (Contact form)",
+    ruleId: "heading-order",
+    impact: "moderate",
+    target: "h3",
+    html: "<h3>Contact form</h3>",
     description: "Heading level skips from h1 to h3",
-    screenReaderImpact:
-      "Users navigating by heading level may assume an intervening section is missing.",
-    line: 17,
+    failureSummary: "Users navigating by heading level may assume an intervening section is missing.",
     status: "applied",
   },
   {
     id: "V004",
-    severity: "serious",
-    wcag: "2.4.1",
-    element: "div.content",
+    ruleId: "region",
+    impact: "serious",
+    target: "div.content",
+    html: "<div class=\"content\">...</div>",
     description: "Primary content has no landmark region",
-    screenReaderImpact:
-      "Screen reader users cannot jump directly to the main content using landmark navigation.",
-    line: 16,
+    failureSummary: "Screen reader users cannot jump directly to the main content using landmark navigation.",
     status: "applied",
   },
 ];
 
-// Structural Dependency Graph context for each violation, keyed by
-// violation id. Shapes are intentionally uniform across relationship
-// types so a single component can render any of them.
 export const sdgGraph = {
   V001: {
     target: { tag: "input", id: "full-name", classes: [] },
@@ -189,7 +195,7 @@ export const sdgGraph = {
   V002: {
     target: { tag: "button", id: "submit-button", classes: [] },
     parent: { tag: "form", id: "contact-form" },
-    children: [{ tag: "svg", note: "aria-hidden=\"true\" \u2014 removed from the accessibility tree" }],
+    children: [{ tag: "svg", note: "aria-hidden=\"true\"" }],
     labelRelationships: [{ status: "missing", note: "No aria-label, aria-labelledby, or visible text content" }],
     headingRelationships: [],
     formRelationships: [{ tag: "form", id: "contact-form", note: "Button is the form's only submit control" }],
@@ -201,7 +207,7 @@ export const sdgGraph = {
     children: [],
     siblings: [{ tag: "form", id: "contact-form", note: "Follows immediately after the heading" }],
     labelRelationships: [],
-    headingRelationships: [{ status: "gap", note: "Nearest preceding heading is <h1> Customer Support \u2014 no <h2> exists between them" }],
+    headingRelationships: [{ status: "gap", note: "Nearest preceding heading is <h1> Customer Support" }],
     formRelationships: [],
     domPath: ["html", "body", "div.content", "h3"],
   },
@@ -223,15 +229,12 @@ export const sdgGraph = {
   },
 };
 
-// Generated repairs, keyed by violation id.
 export const repairs = {
   V001: {
     strategy: "Associate an explicit label with the input",
-    change:
-      "Added <label for=\"full-name\">Full name</label> immediately before the input, linked via the for/id pair.",
+    change: "Added <label for=\"full-name\">Full name</label> immediately before the input, linked via the for/id pair.",
     targetElement: "input#full-name",
-    reason:
-      "SDG context showed no existing label anywhere in the form tree, so a new explicit label was introduced rather than reusing one.",
+    reason: "SDG context showed no existing label anywhere in the form tree, so a new explicit label was introduced rather than reusing one.",
     relatedRelationships: ["parent: div.field", "form: #contact-form"],
     status: "applied",
   },
@@ -239,8 +242,7 @@ export const repairs = {
     strategy: "Add an accessible name via aria-label",
     change: "Added aria-label=\"Submit contact form\" to the button.",
     targetElement: "button#submit-button",
-    reason:
-      "The SVG child is intentionally aria-hidden for decoration, so the accessible name has to come from the button itself.",
+    reason: "The SVG child is intentionally aria-hidden for decoration, so the accessible name has to come from the button itself.",
     relatedRelationships: ["child: svg[aria-hidden]", "form: #contact-form"],
     status: "applied",
   },
@@ -256,42 +258,16 @@ export const repairs = {
     strategy: "Wrap primary content in a landmark",
     change: "Replaced div.content with <main id=\"main-content\">.",
     targetElement: "div.content",
-    reason:
-      "DOM hierarchy showed header and footer landmarks already existed, but the content between them had no landmark role.",
+    reason: "DOM hierarchy showed header and footer landmarks already existed, but the content between them had no landmark role.",
     relatedRelationships: ["sibling: header", "sibling: footer"],
     status: "applied",
   },
 };
 
 export const evaluationMetrics = [
-  {
-    id: "effectiveness",
-    label: "Repair Effectiveness",
-    score: 96,
-    detail: "4 of 4 detected violations fully resolved",
-  },
-  {
-    id: "safety",
-    label: "Repair Safety",
-    score: 98,
-    detail: "No structural or functional side effects introduced",
-  },
-  {
-    id: "structural",
-    label: "Structural Preservation",
-    score: 94,
-    detail: "36 of 38 DOM nodes preserved without alteration",
-  },
-  {
-    id: "efficiency",
-    label: "Repair Efficiency",
-    score: 91,
-    detail: "4 of 4 repairs completed in a single generation pass",
-  },
-  {
-    id: "semantic",
-    label: "Semantic Dependency Preservation",
-    score: 93,
-    detail: "13 of 14 SDG relationships preserved after repair",
-  },
+  { id: "effectiveness", label: "Repair Effectiveness", score: 96, detail: "4 of 4 detected violations fully resolved" },
+  { id: "safety", label: "Repair Safety", score: 98, detail: "No structural or functional side effects introduced" },
+  { id: "structural", label: "Structural Preservation", score: 94, detail: "36 of 38 DOM nodes preserved without alteration" },
+  { id: "efficiency", label: "Repair Efficiency", score: 91, detail: "4 of 4 repairs completed in a single generation pass" },
+  { id: "semantic", label: "Semantic Dependency Preservation", score: 93, detail: "13 of 14 SDG relationships preserved after repair" },
 ];

@@ -1,53 +1,77 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
-// STANDARD IMPORT: Wala nang hacks, ito ang tamang paraan
 import ForceGraph2D from "react-force-graph-2d";
 import { layoutDocumentTree, layoutRadialGraph } from "../../utils/graphLayout.js";
 import { getSeverityMeta } from "../../utils/severity.js";
 import '../../styles/SdgGraphModal.css';
 
-// --- Document Tree Graph (Full DOM) ---
+// Helper function para i-render ang text label sa mga graph edges
+const drawEdgeLabel = (link, ctx) => {
+  if (!link.relation) return;
+  const start = link.source;
+  const end = link.target;
+  
+  // Huwag i-render kung hindi pa na-compute ng physics engine ang x/y coordinates
+  if (typeof start !== 'object' || typeof end !== 'object') return;
+
+  const textPos = {
+    x: start.x + (end.x - start.x) / 2,
+    y: start.y + (end.y - start.y) / 2
+  };
+  
+  const relLink = { x: end.x - start.x, y: end.y - start.y };
+  let textAngle = Math.atan2(relLink.y, relLink.x);
+  
+  // Panatilihing nakatayo ang text kahit umikot ang node
+  if (textAngle > Math.PI / 2) textAngle = -(Math.PI - textAngle);
+  if (textAngle < -Math.PI / 2) textAngle = -(-Math.PI - textAngle);
+
+  const fontSize = 3.5;
+  ctx.font = `${fontSize}px Sans-Serif`;
+  const textWidth = ctx.measureText(link.relation).width;
+  const bgDimensions = [textWidth + 2, fontSize + 2];
+
+  ctx.save();
+  ctx.translate(textPos.x, textPos.y);
+  ctx.rotate(textAngle);
+
+  // Background ng label
+  ctx.fillStyle = 'rgba(30, 30, 30, 0.85)';
+  ctx.fillRect(-bgDimensions[0] / 2, -bgDimensions[1] / 2, bgDimensions[0], bgDimensions[1]);
+
+  // Text ng label
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#a1e3b6';
+  ctx.fillText(link.relation, 0, 0);
+  ctx.restore();
+};
+
 function DocumentForceGraph({ documentGraph, violationsById, onSelectViolation }) {
   const graphRef = useRef(null);
 
   const graphData = useMemo(() => {
-    if (!documentGraph?.nodes || documentGraph.nodes.length === 0) return { nodes: [], links: [] };
-
-    const { nodes, edges } = layoutDocumentTree(documentGraph.nodes, documentGraph.rootId);
+    // Ipasa ang buong documentGraph object sa halip na nodes lang
+    const { nodes, links } = layoutDocumentTree(documentGraph);
 
     return {
       nodes: nodes.map(n => {
         const violation = n.violationId ? violationsById.get(n.violationId) : null;
-        // SAFEGUARD: Siguraduhing may valid hex color string na babalik
-        const nodeColor = violation ? (getSeverityMeta(violation.severity)?.color || "#ff4d4f") : "#007bff";
-        
         return {
-          id: String(n.id),
-          name: String(n.label || ""),
-          violationId: n.violationId,
+          ...n,
+          name: n.label,
           val: violation ? 25 : 10,
-          color: nodeColor
+          color: violation ? getSeverityMeta(violation.impact || violation.severity)?.color : "#007bff"
         };
       }),
-      links: edges.map(e => ({
-        source: String(e.source || e.from),
-        target: String(e.target || e.to)
-      }))
+      links
     };
   }, [documentGraph, violationsById]);
 
   useEffect(() => {
-    if (graphRef.current) {
-      setTimeout(() => graphRef.current.zoomToFit(400, 50), 300);
-    }
+    if (graphRef.current) setTimeout(() => graphRef.current.zoomToFit(400, 50), 300);
   }, [graphData]);
 
-  if (!graphData.nodes.length) {
-    return (
-      <div className="sdg-graph-modal__empty">
-        <p>No document structure available yet.</p>
-      </div>
-    );
-  }
+  if (!graphData.nodes.length) return <div className="sdg-graph-modal__empty"><p>No document structure available.</p></div>;
 
   return (
     <ForceGraph2D
@@ -58,53 +82,39 @@ function DocumentForceGraph({ documentGraph, violationsById, onSelectViolation }
       nodeVal="val"
       linkColor={() => "#ffffff44"}
       backgroundColor="#1e1e1e"
-      onNodeClick={(node) => {
-        if (node.violationId) onSelectViolation(node.violationId);
-      }}
-      dagMode="td" 
-      dagLevelDistance={60}
       linkDirectionalArrowLength={3.5}
       linkDirectionalArrowRelPos={1}
+      linkCanvasObjectMode={() => 'after'}
+      linkCanvasObject={drawEdgeLabel}
+      onNodeClick={(node) => { if (node.violationId) onSelectViolation(node.violationId); }}
+      dagMode="td" 
+      dagLevelDistance={60}
     />
   );
 }
 
-// --- Radial Graph (Local Context) ---
 function RadialForceGraph({ context }) {
   const graphRef = useRef(null);
 
   const graphData = useMemo(() => {
-    if (!context) return { nodes: [], links: [] };
-
-    const { nodes, edges } = layoutRadialGraph(context);
+    const { nodes, links } = layoutRadialGraph(context);
 
     return {
       nodes: nodes.map(n => ({
-        id: String(n.id),
-        name: String(n.label || n.id),
+        ...n,
+        name: n.label,
         val: n.kind === "target" ? 30 : 15,
         color: n.kind === "target" ? "#ff4d4f" : (n.isFlag ? "#faad14" : "#007bff")
       })),
-      links: edges.map(e => ({
-        source: String(e.source || e.from),
-        target: String(e.target || e.to)
-      }))
+      links
     };
   }, [context]);
 
   useEffect(() => {
-    if (graphRef.current) {
-      setTimeout(() => graphRef.current.zoomToFit(400, 50), 300);
-    }
+    if (graphRef.current) setTimeout(() => graphRef.current.zoomToFit(400, 50), 300);
   }, [graphData]);
 
-  if (!graphData.nodes.length) {
-    return (
-      <div className="sdg-graph-modal__empty">
-        <p>No local relationship context found.</p>
-      </div>
-    );
-  }
+  if (!graphData.nodes.length) return <div className="sdg-graph-modal__empty"><p>No local context found.</p></div>;
 
   return (
     <ForceGraph2D
@@ -115,103 +125,53 @@ function RadialForceGraph({ context }) {
       nodeVal="val"
       linkColor={() => "#ffffff44"}
       backgroundColor="#1e1e1e"
-      dagMode="radialout"
-      dagLevelDistance={80}
       linkDirectionalArrowLength={3.5}
       linkDirectionalArrowRelPos={1}
+      linkCanvasObjectMode={() => 'after'}
+      linkCanvasObject={drawEdgeLabel}
+      dagMode="radialout"
+      dagLevelDistance={80}
     />
   );
 }
 
-// --- Main Modal Component ---
 function SdgGraphModal({ violation, context, documentGraph, violations, onClose, onSelectViolation }) {
   const [view, setView] = useState(violation ? "local" : "document");
   const closeButtonRef = useRef(null);
   
-  const violationsById = useMemo(() => {
-    return new Map((violations || []).map((item) => [item.id, item]));
-  }, [violations]);
+  const violationsById = useMemo(() => new Map((violations || []).map(v => [v.id, v])), [violations]);
 
   useEffect(() => {
     closeButtonRef.current?.focus();
-    function handleKeyDown(event) {
-      if (event.key === "Escape") onClose();
-    }
+    const handleKeyDown = (e) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
   return (
     <div className="sdg-graph-modal__backdrop" onClick={onClose}>
-      <div
-        className="sdg-graph-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label="SDG graph visualizer"
-        onClick={(event) => event.stopPropagation()}
-      >
+      <div className="sdg-graph-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <header className="sdg-graph-modal__header">
           <div className="sdg-graph-modal__title-group">
             <h2>SDG Graph Visualizer</h2>
             <p>{view === "local" ? `Local relationships for ${violation?.id ?? ""}` : "Full document structure"}</p>
           </div>
-          
           <div className="sdg-graph-modal__controls">
-            <div className="sdg-graph-modal__segmented-control" role="tablist" aria-label="Graph scope">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={view === "local"}
-                className={`sdg-segmented-btn ${view === "local" ? "active" : ""}`}
-                onClick={() => setView("local")}
-                disabled={!violation}
-              >
-                Selected violation
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={view === "document"}
-                className={`sdg-segmented-btn ${view === "document" ? "active" : ""}`}
-                onClick={() => setView("document")}
-              >
-                Full document
-              </button>
+            <div className="sdg-graph-modal__segmented-control" role="tablist">
+              <button role="tab" className={`sdg-segmented-btn ${view === "local" ? "active" : ""}`} onClick={() => setView("local")} disabled={!violation}>Selected violation</button>
+              <button role="tab" className={`sdg-segmented-btn ${view === "document" ? "active" : ""}`} onClick={() => setView("document")}>Full document</button>
             </div>
-            
-            <button type="button" className="sdg-graph-modal__close" onClick={onClose} ref={closeButtonRef}>
-              Close
-            </button>
+            <button className="sdg-graph-modal__close" onClick={onClose} ref={closeButtonRef}>Close</button>
           </div>
         </header>
 
-        <div className="sdg-graph-modal__canvas-area" style={{ width: '100%', height: '500px', overflow: 'hidden' }}>
+        <div className="sdg-graph-modal__canvas-area" style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
           {view === "local" ? (
-            violation && context ? (
-              <RadialForceGraph context={context} />
-            ) : (
-              <div className="sdg-graph-modal__empty">
-                <p>Select a violation first to see its local relationships.</p>
-              </div>
-            )
+            violation && context ? <RadialForceGraph context={context} /> : <div className="sdg-graph-modal__empty"><p>Select a violation first.</p></div>
           ) : (
-            <DocumentForceGraph
-              documentGraph={documentGraph}
-              violationsById={violationsById}
-              onSelectViolation={(violationId) => {
-                onSelectViolation(violationId);
-                setView("local");
-              }}
-            />
+            <DocumentForceGraph documentGraph={documentGraph} violationsById={violationsById} onSelectViolation={(vId) => { onSelectViolation(vId); setView("local"); }} />
           )}
         </div>
-
-        {view === "document" && (
-          <footer className="sdg-graph-modal__footer">
-            <span className="sdg-indicator-dot"></span>
-            Nodes with violations are larger and colored based on severity — click one to inspect.
-          </footer>
-        )}
       </div>
     </div>
   );

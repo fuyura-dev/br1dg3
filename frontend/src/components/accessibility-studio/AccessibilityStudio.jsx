@@ -23,6 +23,7 @@ function AccessibilityStudio() {
     sdgContext,
     repair,
     selectViolation,
+    runScan,
   } = useAccessibilityStudio();
 
   const [isGraphOpen, setGraphOpen] = useState(false);
@@ -38,7 +39,7 @@ function AccessibilityStudio() {
   return (
     <div className="accessibility-studio">
       <header className="accessibility-studio__header">
-        <h1>BR1DG3 — Accessibility Repair Studio (TESTING MODE)</h1>
+        <h1>BR1DG3 — Accessibility Repair Studio</h1>
       </header>
 
       <EvaluationSummary metrics={evaluationMetrics} />
@@ -49,7 +50,8 @@ function AccessibilityStudio() {
           initialHtml={htmlSource}
           isScanning={status === "loading"}
           onRunScan={(newHtml) => {
-            console.log("Trigger backend scan here with:", newHtml);
+            // Triggers the real backend scan via the hook
+            runScan(newHtml);
           }}
         />
 
@@ -67,13 +69,13 @@ function AccessibilityStudio() {
 
       <RepairSummary violation={selectedViolation} repair={repair} />
 
-      {/* IBINALIK NA ANG TOTOONG DIFF VIEWER (Inalis na ang placeholder) */}
+      {/* Side-by-side comparison of the original and repaired HTML */}
       <DiffViewer 
         original={htmlSource} 
         repaired={repairedHtml} 
       />
 
-      {/* SdgGraphModal */}
+      {/* SDG Graph Visualizer Modal */}
       {isGraphOpen && (
         <SdgGraphModal
           violation={selectedViolation}
