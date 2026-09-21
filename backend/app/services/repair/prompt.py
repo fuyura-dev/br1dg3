@@ -224,6 +224,7 @@ if __name__ == "__main__":
     from pathlib import Path
     from app.services.sdg.builder import SDGBuilder
     from app.services.repair.context import ContextExtractor
+    from app.services.repair.order import order_violations_by_dependency
 
     # Parse arguments
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
@@ -241,13 +242,14 @@ if __name__ == "__main__":
 
     html = html_path.read_text(encoding="utf-8")
 
-    # Run detection or fall back to simulated violations for offline testing
+    # 1. Run detection (axe-core) or fallback to sample violations
     violations = []
     try:
         from app.services.detection.detect import detect
         violations = detect(html)
-        print(f"[*] Detected {len(violations)} accessibility violations via axe-core.")
-    except Exception:
+        print(f"[*] Detected {len(violations)} rule violations via axe-core.")
+    except Exception as e:
+        print(f"[*] Axe detection unavailable ({e}). Using sample violations matching sample.html.")
         violations = [
             {
                 "id": "label",
@@ -261,13 +263,25 @@ if __name__ == "__main__":
                         "html": '<input type="radio" name="plan" value="basic">',
                     },
                     {
-                        "target": ["input[name='fullname']"],
-                        "html": '<input type="text" name="fullname">',
+                        "target": ["input[name='outside']"],
+                        "html": '<input type="text" name="outside" form="signup">',
                     },
                 ],
-            }
+            },
+            {
+                "id": "heading-order",
+                "impact": "moderate",
+                "description": "Heading levels should only increase by one",
+                "help": "Heading levels should increase by one",
+                "helpUrl": "https://dequeuniversity.com/rules/axe/4.4/heading-order",
+                "nodes": [
+                    {
+                        "target": ["h4"],
+                        "html": "<h4>Skipped level</h4>",
+                    },
+                ],
+            },
         ]
-        print("[*] Axe detection unavailable (running in offline mode with sample violations).")
 
     if show_baseline:
         prompt = build_baseline_prompt(html, violations)
@@ -280,28 +294,32 @@ if __name__ == "__main__":
         print("=" * 60)
         print(prompt.user)
     else:
+        # 2. Build SDG with marked violations
         builder = SDGBuilder(html, violations=violations)
 
-        # Pick target node
-        target = args[1] if len(args) > 1 else None
+        # 3. Find all violated nodes and sort them by dependency
+        violated_nodes = [n for n, d in builder.graph.nodes(data=True) if d.get("has_issue")]
+        ordered_targets = order_violations_by_dependency(builder.graph, violated_nodes)
+
+        print(f"[*] Total violated nodes found: {len(violated_nodes)}")
+        if ordered_targets:
+            print(f"[*] Topological dependency repair order: {' -> '.join(ordered_targets)}")
+
+        # 4. Pick target: user-specified, or first in dependency order
+        target = args[1] if len(args) > 1 else (ordered_targets[0] if ordered_targets else None)
+
         if not target:
-            violated_nodes = [n for n, d in builder.graph.nodes(data=True) if d.get("has_issue")]
-            target = violated_nodes[0] if violated_nodes else "node_27_input"
+            print("Error: No violated nodes found in graph.")
+            sys.exit(1)
 
         if target not in builder.graph:
             print(f"Error: Node '{target}' not found in SDG graph.")
             print(f"Available nodes ({len(builder.graph)}): {list(builder.graph.nodes)[:10]}...")
             sys.exit(1)
 
-        # If chosen target has no issues recorded, add a sample issue for demonstration
-        if not builder.graph.nodes[target]["issues"]:
-            builder.graph.nodes[target]["issues"].append({
-                "id": "label",
-                "impact": "critical",
-                "description": "Ensures every form element has a label",
-                "help": "Form elements must have labels",
-            })
+        print(f"[*] Selected target for repair: {target}")
 
+        # 5. Extract context and generate prompt
         extractor = ContextExtractor.from_builder(builder)
         ctx = extractor.extract(target)
         prompt = build_sdg_prompt(ctx, builder.element_to_id)
