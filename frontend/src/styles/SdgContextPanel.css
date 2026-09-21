@@ -1,0 +1,120 @@
+.sdg-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%; 
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+  padding: 14px;
+}
+
+.sdg-panel__empty {
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+}
+
+.sdg-panel__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sdg-panel__graph-btn {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  padding: 5px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--color-accent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sdg-panel__graph-btn:hover {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+}
+
+.sdg-panel__target {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--color-accent-soft);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.sdg-panel__target code {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.sdg-breadcrumb {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-bottom: 14px;
+  word-break: break-word;
+}
+
+.sdg-panel__groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1; 
+  overflow-y: auto; 
+  padding-right: 4px; 
+}
+
+.sdg-group h3 {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-bottom: 6px;
+}
+
+.sdg-group__empty {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.sdg-group ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sdg-node {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+}
+
+.sdg-node code {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.sdg-node__note {
+  font-size: 11.5px;
+  color: var(--color-text-secondary);
+}
+
+.sdg-node__flag {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: capitalize;
+  color: var(--color-warning);
+}
