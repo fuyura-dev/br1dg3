@@ -1,0 +1,319 @@
+from collections import defaultdict
+from dataclasses import dataclass
+
+from bs4.formatter import HTMLFormatter
+
+VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
+SKIP_ATTRS = {"class", "style"}          # dropped from CONTEXT nodes only (also every data-* attribute)
+
+
+class _AsWritten(HTMLFormatter):
+    """Like str(tag), but keeps the attribute order and writes <input ...> instead of <input .../>."""
+
+    def attributes(self, tag):
+        return [(k, None if v == "" else v) for k, v in tag.attrs.items()]   # None -> bare attribute
+
+
+_AS_WRITTEN = _AsWritten(void_element_close_prefix="")
+
+
+def _outer_html(element):
+    return element.decode(formatter=_AS_WRITTEN)
+
+
+@dataclass
+class Prompt:
+    system: str
+    user: str
+
+
+# ------------------------------------------------------------------ shared pieces
+COMMON_RULES = """\
+- Keep the HTML valid.
+- Change only what is needed to fix the reported violation(s). Keep everything else exactly as it is (tags, attributes, text, children, order).
+- Do not remove content or functionality.
+- Do not add explanations, comments or code fences."""
+
+
+def _violation_line(rule_id, impact, help_text, description):
+    text = ". ".join(part for part in (help_text, description) if part)
+    return f"{rule_id} ({impact}): {text}"
+
+
+# ------------------------------------------------------------------ baseline
+BASELINE_SYSTEM = f"""\
+You are a web accessibility repair assistant.
+You receive an HTML document and a list of accessibility violations detected in it.
+Return ONLY the complete repaired HTML document.
+
+Rules:
+{COMMON_RULES}"""
+
+
+def build_baseline_prompt(html, violations):
+    """violations: raw Axe violations (each has id, impact, help, description, nodes[html, target])."""
+    lines = []
+    for i, v in enumerate(violations, 1):
+        lines.append(f"{i}. " + _violation_line(v.get("id"), v.get("impact"), v.get("help"), v.get("description")))
+        for node in v.get("nodes", []):
+            lines.append(f"   - Affected element: {node.get('html')}")
+            selector = next((t for t in node.get("target", []) if isinstance(t, str)), None)
+            if selector:
+                lines.append(f"     Selector: {selector}")
+    user = "## Violations\n" + "\n".join(lines) + "\n\n## HTML document\n" + html + \
+           "\n\nReturn only the complete repaired HTML document."
+    return Prompt(BASELINE_SYSTEM, user)
+
+
+# ------------------------------------------------------------------ BR1DG3 (SDG)
+SDG_SYSTEM = f"""\
+You are a web accessibility repair assistant.
+You receive ONE target element [T] with its accessibility violation(s), and a small graph of related
+elements that shows how the target connects to the rest of the page (labels, ARIA references,
+headings, landmarks, form groups, parents, focus order).
+Relationships are written as arrows: `[A] --relation--> [B]` means A has that relation to B, and a chain
+such as `[A] --r1--> [B] --r2--> [C]` follows the arrows. The relation name describes the connection.
+Return ONLY the repaired target element: exactly one HTML element and nothing else.
+
+Rules:
+{COMMON_RULES}
+- Do not change the target's id attribute; other elements refer to it.
+- The related elements are read-only context. Do not output them. Use them so the fix fits the page
+  (for example reuse existing label or heading text, keep landmark names distinct)."""
+
+# Relations whose edges form a path DOWN to the target. Each family is printed as ONE chain,
+# root -> ... -> [T]  (e.g. h1 -> h2 -> [T]).
+CHAIN_FAMILIES = [
+    {"heading_hierarchy", "heading_context"},
+    {"landmark_structure", "landmark_context"},
+    {"parent_child", "nested_container", "parent_context"},
+    {"form_group"},
+]
+
+# printing order of the remaining edges: structure, references, focus
+GROUP_RANK = {
+    "heading_hierarchy": 0, "heading_context": 0,
+    "landmark_structure": 1, "landmark_context": 1,
+    "parent_context": 2, "parent_child": 2, "nested_container": 2,
+    "form_group": 3, "name_group": 3,
+    "label_input": 4, "aria_labelledby": 4, "aria_describedby": 4, "aria_controls": 4,
+    "aria_owns": 4, "aria_errormessage": 4, "id_reference": 4,
+    "focus_order": 5, "hidden_context": 5,
+}
+
+
+def _index(node_id):
+    return int(node_id.split("_")[1])                    # node_{index}_{tag} = document order
+
+
+def _snippet(element, limit=80):
+    """Shallow view of a context element: its tag + attributes + short text, children collapsed."""
+    attrs = []
+    for name, value in element.attrs.items():
+        if name in SKIP_ATTRS or name.startswith("data-"):
+            continue
+        if isinstance(value, list):
+            value = " ".join(value)
+        attrs.append(name if value == "" else f'{name}="{value}"')
+    open_tag = "<" + " ".join([element.name, *attrs]) + ">"
+    if element.name in VOID_TAGS:
+        return open_tag
+    if element.find(True):                               # has child elements: do not expand
+        return f"{open_tag}…</{element.name}>"
+    text = " ".join(element.get_text().split())
+    if len(text) > limit:
+        text = text[:limit] + "…"
+    return f"{open_tag}{text}</{element.name}>"
+
+
+def _chains_to_target(ctx, target, label):
+    """One chain per family: walk back from the target along that family's edges (nearest ancestor
+    first), then print it root -> ... -> [T]. Returns (lines, edges already used)."""
+    lines, used = [], set()
+    for family in CHAIN_FAMILIES:
+        path, node, seen = [], target, {target}
+        while True:
+            options = [(u, k, d["relation"]) for u, _, k, d in ctx.in_edges(node, keys=True, data=True)
+                       if d["relation"] in family and u not in seen]
+            if not options:
+                break
+            u, k, relation = max(options, key=lambda o: _index(o[0]))      # nearest = latest in the document
+            path.append((u, relation, node))
+            used.add((u, node, k))
+            seen.add(u)
+            node = u
+        if path:
+            path.reverse()
+            lines.append(label[path[0][0]] + "".join(f" --{r}--> {label[v]}" for _, r, v in path))
+    return lines, used
+
+
+def _join_runs(edges, label):
+    """Join a -> b -> c of the SAME relation into one line, but only when nothing branches in between."""
+    out, inn = defaultdict(list), defaultdict(list)
+    for u, v, r in edges:
+        out[(u, r)].append(v)
+        inn[(v, r)].append(u)
+
+    def continues(u, r):        # is the edge leaving u just the continuation of the edge entering u?
+        return len(inn[(u, r)]) == 1 and len(out[(inn[(u, r)][0], r)]) == 1 and len(out[(u, r)]) == 1
+
+    lines, seen = [], set()
+    for u, v, r in edges:
+        if (u, v, r) in seen or continues(u, r):
+            continue
+        chain = [u, v]
+        seen.add((u, v, r))
+        while len(out[(chain[-1], r)]) == 1 and len(inn[(chain[-1], r)]) == 1:
+            w = out[(chain[-1], r)][0]
+            if (chain[-1], w, r) in seen:
+                break
+            seen.add((chain[-1], w, r))
+            chain.append(w)
+        lines.append(label[chain[0]] + "".join(f" --{r}--> {label[n]}" for n in chain[1:]))
+    lines += [f"{label[u]} --{r}--> {label[v]}" for u, v, r in edges if (u, v, r) not in seen]   # e.g. cycles
+    return lines
+
+
+def _relationship_lines(ctx, target, label):
+    lines, used = _chains_to_target(ctx, target, label)
+    rest = sorted(
+        ((u, v, d["relation"]) for u, v, k, d in ctx.edges(keys=True, data=True) if (u, v, k) not in used),
+        key=lambda e: (GROUP_RANK.get(e[2], 6), _index(e[0]), _index(e[1])),
+    )
+    return lines + _join_runs(rest, label)
+
+
+def build_sdg_prompt(ctx, element_ids):
+    target = ctx.graph["target"]
+
+    # labels: [T] for the target, [1], [2]... for the rest in document order
+    others = sorted((n for n in ctx.nodes if n != target), key=_index)
+    label = {target: "[T]", **{n: f"[{i}]" for i, n in enumerate(others, 1)}}
+
+    issues = ctx.nodes[target].get("issues", [])
+    violations = "\n".join(
+        f"{i}. " + _violation_line(v.get("id"), v.get("impact"), v.get("help"), v.get("description"))
+        for i, v in enumerate(issues, 1)
+    ) or "(none recorded)"
+
+    parts = [
+        "## Violations on the target element\n" + violations,
+        f"## Target element [T]\n{_outer_html(element_ids.element(target))}",
+    ]
+
+    if others:
+        lines = []
+        for n in others:
+            line = f"{label[n]} {_snippet(element_ids.element(n))}"
+            own = [v.get("id") for v in ctx.nodes[n].get("issues", [])]
+            if own:
+                line += f"   (has its own violation: {', '.join(own)}; handled separately, do not change)"
+            lines.append(line)
+        parts.append("## Related elements (read-only)\n" + "\n".join(lines))
+        parts.append("## Relationships\n" + "\n".join(_relationship_lines(ctx, target, label)))
+    else:
+        parts.append("## Related elements\nNone found.")
+
+    parts.append("Return only the repaired target element.")
+    return Prompt(SDG_SYSTEM, "\n\n".join(parts))
+
+
+if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+    from app.services.sdg.builder import SDGBuilder
+    from app.services.repair.context import ContextExtractor
+
+    # Parse arguments
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    flags = {a for a in sys.argv[1:] if a.startswith("--")}
+    show_baseline = "--baseline" in flags
+
+    # Locate HTML file (supports running from repo root or backend/)
+    html_arg = args[0] if len(args) > 0 else "sample.html"
+    candidates = [Path(html_arg), Path("backend") / html_arg, Path("..") / html_arg]
+    html_path = next((p for p in candidates if p.is_file()), None)
+
+    if not html_path:
+        print(f"Error: Could not find HTML file '{html_arg}'.")
+        sys.exit(1)
+
+    html = html_path.read_text(encoding="utf-8")
+
+    # Run detection or fall back to simulated violations for offline testing
+    violations = []
+    try:
+        from app.services.detection.detect import detect
+        violations = detect(html)
+        print(f"[*] Detected {len(violations)} accessibility violations via axe-core.")
+    except Exception:
+        violations = [
+            {
+                "id": "label",
+                "impact": "critical",
+                "description": "Ensures every form element has a label",
+                "help": "Form elements must have labels",
+                "helpUrl": "https://dequeuniversity.com/rules/axe/4.4/label",
+                "nodes": [
+                    {
+                        "target": ["input[name='plan'][value='basic']"],
+                        "html": '<input type="radio" name="plan" value="basic">',
+                    },
+                    {
+                        "target": ["input[name='fullname']"],
+                        "html": '<input type="text" name="fullname">',
+                    },
+                ],
+            }
+        ]
+        print("[*] Axe detection unavailable (running in offline mode with sample violations).")
+
+    if show_baseline:
+        prompt = build_baseline_prompt(html, violations)
+        print("\n" + "=" * 60)
+        print("BASELINE SYSTEM PROMPT")
+        print("=" * 60)
+        print(prompt.system)
+        print("\n" + "=" * 60)
+        print("BASELINE USER PROMPT")
+        print("=" * 60)
+        print(prompt.user)
+    else:
+        builder = SDGBuilder(html, violations=violations)
+
+        # Pick target node
+        target = args[1] if len(args) > 1 else None
+        if not target:
+            violated_nodes = [n for n, d in builder.graph.nodes(data=True) if d.get("has_issue")]
+            target = violated_nodes[0] if violated_nodes else "node_27_input"
+
+        if target not in builder.graph:
+            print(f"Error: Node '{target}' not found in SDG graph.")
+            print(f"Available nodes ({len(builder.graph)}): {list(builder.graph.nodes)[:10]}...")
+            sys.exit(1)
+
+        # If chosen target has no issues recorded, add a sample issue for demonstration
+        if not builder.graph.nodes[target]["issues"]:
+            builder.graph.nodes[target]["issues"].append({
+                "id": "label",
+                "impact": "critical",
+                "description": "Ensures every form element has a label",
+                "help": "Form elements must have labels",
+            })
+
+        extractor = ContextExtractor.from_builder(builder)
+        ctx = extractor.extract(target)
+        prompt = build_sdg_prompt(ctx, builder.element_to_id)
+
+        print("\n" + "=" * 60)
+        print(f"SDG SYSTEM PROMPT (Target: {target})")
+        print("=" * 60)
+        print(prompt.system)
+        print("\n" + "=" * 60)
+        print(f"SDG USER PROMPT (Target: {target})")
+        print("=" * 60)
+        print(prompt.user)
+        print("\n" + "=" * 60)
+        print(f"Prompt stats: {len(prompt.user)} chars | ~{len(prompt.user)//4} tokens")
+        print("=" * 60)

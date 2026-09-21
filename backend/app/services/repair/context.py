@@ -63,9 +63,8 @@ class ContextExtractor:
         for container in self._ancestors(target, "form_group", FORM_CONTAINERS):
             nodes.append(container)
             nodes += [v for v, r in self._out(container) if r == "form_group" and self._tag(v) == "legend"]
-        # radio group: direct neighbours in the input -> input chain
-        if self._tag(target) == "input":
-            nodes += [n for n in self._neighbors(target, {"form_group"}) if self._tag(n) == "input"]
+        # controls that share a name (radio / checkbox group): direct neighbours in the chain
+        nodes += self._neighbors(target, {"name_group"})
         return nodes
 
     # Rule 5
