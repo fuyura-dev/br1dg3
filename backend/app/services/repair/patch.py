@@ -40,36 +40,47 @@ def clean_reply(text):
 @dataclass
 class PatchResult:
     applied: bool
-    status: str                                   # applied | empty_reply | no_element | multiple_elements
+    status: str                                   # applied | empty_reply | no_element
     warnings: list[str] = field(default_factory=list)
 
 
+def _marker_owner(elements, token):
+    """Return the element in a reply fragment that carries `token`, if present."""
+    for element in elements:
+        if element.get(MARKER) == token:
+            return element
+        descendant = element.find(attrs={MARKER: token})
+        if descendant is not None:
+            return descendant
+    return None
+
+
 def apply_reply(target, reply, token):
-    """Swap the reply in for `target` (in place). The reply must be exactly ONE element."""
+    """Replace `target` with every element in the reply fragment, in document order."""
     text = clean_reply(reply)
     if not text:
         return PatchResult(False, "empty_reply")
     elements = [c for c in BeautifulSoup(text, "html.parser").contents if isinstance(c, Tag)]
     if not elements:
         return PatchResult(False, "no_element")
-    if len(elements) > 1:
-        return PatchResult(False, "multiple_elements")
-    new = elements[0]
 
-    warnings = []
-    if new.name != target.name:
-        warnings.append("tag_changed")
-    if new.get("id") != target.get("id"):
-        warnings.append("id_changed")
-    if new.get(MARKER) != token:                  # dropped or altered: put the target's marker back
-        new[MARKER] = token
+    warnings = [f"elements_added:{len(elements)}"]
+    replacement_target = _marker_owner(elements, token)
+    if replacement_target is None:
+        replacement_target = elements[0]
+        replacement_target[MARKER] = token
         warnings.append("marker_readded")
+
+    if replacement_target.name != target.name:
+        warnings.append("tag_changed")
+    if replacement_target.get("id") != target.get("id"):
+        warnings.append("id_changed")
     inner = [e[MARKER] for e in target.find_all(attrs={MARKER: True})]
-    warnings += [f"marker_lost:{t}" for t in inner if new.find(attrs={MARKER: t}) is None]
-    if new == target:                             # same name, attributes and children
+    warnings += [f"marker_lost:{t}" for t in inner if _marker_owner(elements, t) is None]
+    if len(elements) == 1 and elements[0] == target:  # same name, attributes and children
         warnings.append("unchanged")
 
-    target.replace_with(new)
+    target.replace_with(*elements)
     return PatchResult(True, "applied", warnings)
 
 

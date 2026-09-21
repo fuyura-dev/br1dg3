@@ -59,7 +59,8 @@ elements that shows how the target connects to the rest of the page (labels, ARI
 headings, landmarks, form groups, parents, focus order).
 Relationships are written as arrows: `[A] --relation--> [B]` means A has that relation to B, and a chain
 such as `[A] --r1--> [B] --r2--> [C]` follows the arrows. The relation name describes the connection.
-Return ONLY the repaired target element: exactly one HTML element and nothing else.
+Return ONLY the HTML that replaces the target. Normally this is the repaired target element itself.
+You may add sibling elements, or wrap the target, when the repair requires it.
 
 Rules:
 {COMMON_RULES}
@@ -203,7 +204,7 @@ def build_sdg_prompt(ctx, element_ids):
     else:
         parts.append("## Related elements\nNone found.")
 
-    parts.append("Return only the repaired target element.")
+    parts.append("Return only the HTML that replaces [T].")
     return Prompt(SDG_SYSTEM, "\n\n".join(parts))
 
 

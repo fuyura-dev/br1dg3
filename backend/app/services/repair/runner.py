@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 
 from app.services.repair.context import ContextExtractor
 from app.services.repair.llm import LLMResult, generate
-from app.services.repair.order import order_violations_by_dependency
+from app.services.repair.order import dependency_view, order_violations_by_dependency
 from app.services.repair.patch import MARKER, apply_reply, outer_html, strip_markers
 from app.services.repair.prompt import build_sdg_prompt
 from app.services.sdg.builder import SDGBuilder
@@ -13,7 +13,7 @@ class Step:
     token: str
     tag: str | None
     rules: list[str]
-    status: str        # applied | element_gone | llm_error | llm_not_ok:<status> | empty_reply | no_element | multiple_elements
+    status: str        # applied | element_gone | llm_error | llm_not_ok:<status> | empty_reply | no_element
     warnings: list[str] = field(default_factory=list)
     node_id: str | None = None          # the node id AT THAT STEP (ids shift as patches are applied)
     llm: LLMResult | None = None
@@ -55,6 +55,7 @@ class RepairRun:
 
 
 def _pending_violations(pending, table):
+    """Axe-shaped violations for the pending tokens only, located by their marker (not by stale selectors)."""
     return [
         {
             "id": issue["id"], "impact": issue["impact"], "description": issue["description"],
@@ -108,8 +109,8 @@ def run_sdg(html, violations):
         table[token] = graph.nodes[node]["issues"]
     current = outer_html(builder.soup)
 
-    # 2. dependency order, computed once (on the original graph) and converted to tokens
-    order = [tokens[n] for n in order_violations_by_dependency(graph, units)]
+    # 2. dependency order, computed once on the ORIGINAL graph's dependency view, converted to tokens
+    order = [tokens[n] for n in order_violations_by_dependency(dependency_view(graph), units)]
 
     # 3. one violated element per prompt, each on the CURRENT document
     pending, steps = set(table), []
