@@ -47,11 +47,11 @@
           <span class="stat-value" id="stat-improvements">--</span>
         </div>
         <div class="stat-box">
-          <span class="stat-label">Page structure checked</span>
-          <span class="stat-value" id="stat-structure">--</span>
+          <span class="stat-label">Remaining issues</span>
+          <span class="stat-value" id="stat-remaining">--</span>
         </div>
         <div class="stat-box">
-          <span class="stat-label">Page result</span>
+          <span class="stat-label">Page status</span>
           <span class="stat-value" id="stat-result">--</span>
         </div>
       </div>
@@ -59,15 +59,22 @@
 
     <!-- Buttons -->
     <div class="button-group">
-      <button class="btn btn-primary" id="rescan-btn">Re-scan Page</button>
-      <button class="btn btn-primary" id="view-summary-btn">View Summary</button>
+      <button class="btn btn-primary" id="repair-btn" disabled>Repair Page</button>
+      <button class="btn btn-secondary" id="rescan-btn">Re-scan Page</button>
+      <button class="btn btn-secondary" id="view-summary-btn">View Summary</button>
       <button class="btn btn-outline" id="restore-btn">Restore Original</button>
     </div>
 
     <!-- Summary Expandable Box -->
     <div id="summary-box" class="summary-box" style="display: none;">
-      <h3>Repair Summary</h3>
-      <p id="summary-content">No repair performed yet. Run a repair to see the summary.</p>
+      <div class="summary-section">
+        <h3>Repair Engine</h3>
+        <p id="summary-content">No repair performed yet. Run a repair to see the summary.</p>
+      </div>
+      <div class="summary-section" id="issues-list-section" style="display: none;">
+        <h3>Detected Issues</h3>
+        <ul id="issues-list" class="issues-list"></ul>
+      </div>
     </div>
 
   </div>

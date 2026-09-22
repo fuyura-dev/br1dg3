@@ -128,23 +128,30 @@
       autoRepairToggle: document.querySelector('.switch input'),
       statusBadge: document.querySelector('.status-badge'),
       statusMessage: document.getElementById('status-message'),
+      repairBtn: document.getElementById('repair-btn'),
       rescanBtn: document.getElementById('rescan-btn'),
       viewSummaryBtn: document.getElementById('view-summary-btn'),
       restoreBtn: document.getElementById('restore-btn'),
       statIssues: document.getElementById('stat-issues'),
       statImprovements: document.getElementById('stat-improvements'),
-      statStructure: document.getElementById('stat-structure'),
+      statRemaining: document.getElementById('stat-remaining') || document.getElementById('stat-structure'),
       statResult: document.getElementById('stat-result'),
+      summaryBox: document.getElementById('summary-box'),
+      summaryContent: document.getElementById('summary-content'),
+      issuesList: document.getElementById('issues-list'),
+      issuesListSection: document.getElementById('issues-list-section'),
     };
   }
 
   let elements;
+  let canRepair = false;
 
   function updateStats(partial) {
-    if ('issues' in partial) elements.statIssues.textContent = partial.issues;
-    if ('improvements' in partial) elements.statImprovements.textContent = partial.improvements;
-    if ('structure' in partial) elements.statStructure.textContent = partial.structure;
-    if ('result' in partial) elements.statResult.textContent = partial.result;
+    if ('issues' in partial && elements.statIssues) elements.statIssues.textContent = partial.issues;
+    if ('improvements' in partial && elements.statImprovements) elements.statImprovements.textContent = partial.improvements;
+    if ('remaining' in partial && elements.statRemaining) elements.statRemaining.textContent = partial.remaining;
+    if ('structure' in partial && elements.statRemaining) elements.statRemaining.textContent = partial.structure;
+    if ('result' in partial && elements.statResult) elements.statResult.textContent = partial.result;
   }
 
   function setStatusBadge(state) {
@@ -171,6 +178,7 @@
   }
 
   function withButtonLoading(button, loadingLabel) {
+    if (!button) return () => {};
     const originalLabel = button.textContent;
     button.textContent = loadingLabel;
     button.disabled = true;
@@ -181,10 +189,64 @@
   }
 
   function setControlsDisabled(disabled) {
-    elements.rescanBtn.disabled = disabled;
-    elements.viewSummaryBtn.disabled = disabled;
-    elements.restoreBtn.disabled = disabled;
-    elements.autoRepairToggle.disabled = disabled;
+    if (disabled) {
+      if (elements.repairBtn) elements.repairBtn.disabled = true;
+      if (elements.rescanBtn) elements.rescanBtn.disabled = true;
+      if (elements.viewSummaryBtn) elements.viewSummaryBtn.disabled = true;
+      if (elements.restoreBtn) elements.restoreBtn.disabled = true;
+      if (elements.autoRepairToggle) elements.autoRepairToggle.disabled = true;
+    } else {
+      if (elements.repairBtn) elements.repairBtn.disabled = !canRepair;
+      if (elements.rescanBtn) elements.rescanBtn.disabled = false;
+      if (elements.viewSummaryBtn) elements.viewSummaryBtn.disabled = false;
+      if (elements.restoreBtn) elements.restoreBtn.disabled = false;
+      if (elements.autoRepairToggle) elements.autoRepairToggle.disabled = false;
+    }
+  }
+
+  function renderIssuesList(issues) {
+    if (!elements.issuesList || !elements.issuesListSection) return;
+
+    elements.issuesList.innerHTML = '';
+    if (!issues || issues.length === 0) {
+      elements.issuesListSection.style.display = 'none';
+      return;
+    }
+
+    elements.issuesListSection.style.display = 'block';
+
+    const issueMap = new Map();
+    for (const issue of issues) {
+      const key = issue.id || 'unknown';
+      if (!issueMap.has(key)) {
+        issueMap.set(key, {
+          id: issue.id,
+          impact: issue.impact || 'minor',
+          help: issue.help || issue.description || issue.id,
+          count: 1,
+        });
+      } else {
+        issueMap.get(key).count += 1;
+      }
+    }
+
+    for (const item of issueMap.values()) {
+      const li = document.createElement('li');
+      li.className = 'issue-item';
+
+      const label = document.createElement('span');
+      label.className = 'issue-label';
+      label.textContent = `${item.help} (${item.count})`;
+      label.title = item.help;
+
+      const badge = document.createElement('span');
+      badge.className = `issue-badge ${item.impact.toLowerCase()}`;
+      badge.textContent = item.impact;
+
+      li.appendChild(label);
+      li.appendChild(badge);
+      elements.issuesList.appendChild(li);
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -194,60 +256,116 @@
 
   async function handleScan() {
     const restoreButton = withButtonLoading(elements.rescanBtn, 'Scanning...');
-    updateStats({ issues: '...', improvements: '...', structure: '...', result: '...' });
+    updateStats({ issues: '...', improvements: '...', remaining: '...', result: '...' });
 
     try {
       const tab = await getActiveTab();
       const html = await getTabHtml(tab.id);
-      const { total_issues } = await api.scan(html);
+      const { total_issues, issues } = await api.scan(html);
 
       updateStats({
         issues: total_issues,
         improvements: 0,
-        structure: 1,
+        remaining: total_issues,
         result: total_issues > 0 ? 'Needs Repair' : 'Clean',
       });
 
+      canRepair = total_issues > 0;
+      if (elements.repairBtn) {
+        elements.repairBtn.disabled = !canRepair;
+        elements.repairBtn.textContent = total_issues === 0 ? 'No Repairs Needed' : 'Repair Page';
+      }
+
+      renderIssuesList(issues);
+
       if (elements.statusMessage) {
         elements.statusMessage.textContent = total_issues > 0
-          ? `Found ${total_issues} accessibility issue${total_issues === 1 ? '' : 's'}.`
+          ? `Found ${total_issues} accessibility issue${total_issues === 1 ? '' : 's'}. Ready to repair.`
           : 'No accessibility issues found!';
+      }
+
+      if (elements.autoRepairToggle && elements.autoRepairToggle.checked && total_issues > 0) {
+        await executeRepair(tab);
       }
 
     } catch (error) {
       console.error('BR1DG3 Scan error:', error);
       showError(error.message || 'Error scanning page. Is the backend running?');
-      updateStats({ issues: 'Error', improvements: '--', structure: '--', result: 'Failed' });
+      updateStats({ issues: 'Error', improvements: '--', remaining: '--', result: 'Failed' });
+      canRepair = false;
+      if (elements.repairBtn) {
+        elements.repairBtn.disabled = true;
+        elements.repairBtn.textContent = 'Repair Page';
+      }
       if (elements.statusMessage) {
         elements.statusMessage.textContent = error.message || 'Scan failed. Check if backend is running.';
       }
     } finally {
       restoreButton();
     }
-
   }
 
-  async function enableAutoRepair(tab) {
+  async function executeRepair(tab) {
+    console.log('[BR1DG3] Executing repair on tab:', tab.id);
     setStatusText('Repairing...');
     if (elements.statusMessage) {
       elements.statusMessage.textContent = 'Repairing accessibility issues...';
     }
 
     const html = await getTabHtml(tab.id);
-    const { fixed_html, issues_fixed, issues_after, summary } = await api.repair(html);
+    console.log('[BR1DG3] Calling POST /api/repair (HTML length:', html ? html.length : 0, ')...');
+    const { fixed_html, issues_before, issues_fixed, issues_after, summary } = await api.repair(html);
+    console.log('[BR1DG3] Repair response:', { issues_before, issues_fixed, issues_after, summary });
+
     await injectHtml(tab.id, fixed_html);
+    console.log('[BR1DG3] Injected repaired HTML into tab DOM.');
 
-    updateStats({ issues: issues_after, improvements: issues_fixed, result: 'Repaired' });
+    updateStats({
+      issues: issues_before,
+      improvements: issues_fixed,
+      remaining: issues_after,
+      result: issues_after === 0 ? 'Repaired' : (issues_fixed > 0 ? 'Partially Repaired' : 'Needs Repair'),
+    });
 
-    // Store summary in the box
-    const summaryContent = document.getElementById('summary-content');
-    if (summaryContent) {
-      summaryContent.textContent = summary;
+    if (elements.summaryContent) {
+      elements.summaryContent.textContent = summary;
     }
+
+    canRepair = issues_after > 0;
+    if (elements.repairBtn) {
+      elements.repairBtn.disabled = !canRepair;
+      elements.repairBtn.textContent = issues_after === 0 ? 'Page Repaired' : 'Re-run Repair';
+    }
+
+    if (issues_after === 0 && elements.issuesListSection) {
+      elements.issuesListSection.style.display = 'none';
+    }
+
     setStatusBadge('ON');
 
     if (elements.statusMessage) {
-      elements.statusMessage.textContent = `Repair applied: ${issues_fixed} issue${issues_fixed === 1 ? '' : 's'} fixed.`;
+      elements.statusMessage.textContent = `Repair applied: ${issues_fixed} issue${issues_fixed === 1 ? '' : 's'} fixed, ${issues_after} remaining.`;
+    }
+  }
+
+  async function handleManualRepair() {
+    if (!elements.repairBtn) return;
+    console.log('[BR1DG3] Repair button clicked.');
+    const originalLabel = elements.repairBtn.textContent;
+    elements.repairBtn.textContent = 'Repairing...';
+    elements.repairBtn.disabled = true;
+
+    try {
+      const tab = await getActiveTab();
+      await executeRepair(tab);
+    } catch (error) {
+      console.error('[BR1DG3] Repair error:', error);
+      showError(error.message || 'Failed to run repair.');
+      if (elements.statusMessage) {
+        elements.statusMessage.textContent = error.message || 'Repair failed.';
+      }
+      elements.repairBtn.textContent = originalLabel;
+      elements.repairBtn.disabled = false;
     }
   }
 
@@ -263,7 +381,7 @@
     try {
       const tab = await getActiveTab();
       if (isEnabled) {
-        await enableAutoRepair(tab);
+        await executeRepair(tab);
       } else {
         await disableAutoRepair(tab);
       }
@@ -294,14 +412,28 @@
       const tab = await getActiveTab();
       await chrome.tabs.reload(tab.id);
 
-      elements.autoRepairToggle.checked = false;
+      if (elements.autoRepairToggle) {
+        elements.autoRepairToggle.checked = false;
+      }
       setStatusBadge('OFF');
 
       if (elements.statusMessage) {
         elements.statusMessage.textContent = 'Page restored to original.';
       }
 
-      alert('Webpage restored to original state!');
+      if (elements.summaryContent) {
+        elements.summaryContent.textContent = 'No repair performed yet. Run a repair to see the summary.';
+      }
+      renderIssuesList([]);
+      canRepair = false;
+      if (elements.repairBtn) {
+        elements.repairBtn.disabled = true;
+        elements.repairBtn.textContent = 'Repair Page';
+      }
+
+      setTimeout(() => {
+        withExclusiveLock(handleScan);
+      }, 600);
     } catch (error) {
       showError('Error restoring webpage.');
     } finally {
@@ -331,12 +463,23 @@
   document.addEventListener('DOMContentLoaded', () => {
     elements = queryElements();
 
-    elements.rescanBtn.addEventListener('click', () => withExclusiveLock(handleScan));
-    elements.viewSummaryBtn.addEventListener('click', () => withExclusiveLock(handleViewSummary));
-    elements.restoreBtn.addEventListener('click', () => withExclusiveLock(handleRestore));
-    elements.autoRepairToggle.addEventListener('change', (event) =>
-      withExclusiveLock(() => handleAutoRepairToggle(event))
-    );
+    if (elements.repairBtn) {
+      elements.repairBtn.addEventListener('click', () => withExclusiveLock(handleManualRepair));
+    }
+    if (elements.rescanBtn) {
+      elements.rescanBtn.addEventListener('click', () => withExclusiveLock(handleScan));
+    }
+    if (elements.viewSummaryBtn) {
+      elements.viewSummaryBtn.addEventListener('click', handleViewSummary);
+    }
+    if (elements.restoreBtn) {
+      elements.restoreBtn.addEventListener('click', () => withExclusiveLock(handleRestore));
+    }
+    if (elements.autoRepairToggle) {
+      elements.autoRepairToggle.addEventListener('change', (event) =>
+        withExclusiveLock(() => handleAutoRepairToggle(event))
+      );
+    }
 
     withExclusiveLock(handleScan); // run a scan as soon as the popup opens
   });
