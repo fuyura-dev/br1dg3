@@ -55,6 +55,96 @@ def _marker_owner(elements, token):
     return None
 
 
+def _apply_layout_landmarks(target, elements):
+    """Reconcile the LLM's structural layout decisions (renaming containers to <header>, <nav>,
+    <main>, <footer>, or wrapping content sections in <main>) onto the real DOM while preserving
+    all real inner contents, text, images, and data-br1dg3 tracking markers."""
+    real_body = target.body if target.name == "html" else target
+    if real_body is None:
+        return
+
+    # Determine reply_body from elements
+    reply_body = None
+    for el in elements:
+        if el.name == "html":
+            reply_body = el.find("body")
+            break
+        elif el.name == "body":
+            reply_body = el
+            break
+
+    if reply_body is None:
+        # Elements are layout fragments like <header>, <main>, <footer>
+        reply_body = BeautifulSoup("<body></body>", "html.parser").body
+        for el in elements:
+            reply_body.append(el)
+
+    print(f"[_apply_layout_landmarks] target: <{target.name}> | reply_body tags: {[c.name for c in reply_body.children if isinstance(c, Tag)]}")
+
+    # 1. Conversions of existing elements
+    for reply_el in [c for c in reply_body.children if isinstance(c, Tag)]:
+        reply_id = reply_el.get("id")
+        if reply_id and real_body.find(id=reply_id):
+            real_el = real_body.find(id=reply_id)
+            if real_el.name != reply_el.name:
+                real_el.name = reply_el.name
+            real_el.attrs.update(reply_el.attrs)
+            print(f"[_apply_layout_landmarks] Converted element #{reply_id} -> <{real_el.name}>")
+
+    # 2. Main landmark insertion (boundary-aware and duplicate-ID safe)
+    reply_main = reply_body.find("main")
+    if reply_main and not real_body.find("main"):
+        reply_children = [c for c in reply_body.children if isinstance(c, Tag)]
+        main_idx = reply_children.index(reply_main) if reply_main in reply_children else -1
+
+        real_to_wrap = []
+        if main_idx >= 0:
+            pre_reply = reply_children[:main_idx]
+            post_reply = reply_children[main_idx + 1:]
+
+            start_el = None
+            for el in reversed(pre_reply):
+                match = real_body.find(id=el.get("id")) if el.get("id") else None
+                if not match and el.name in {"header", "nav", "h1"}:
+                    match = real_body.find(el.name)
+                if match and match in real_body.find_all(recursive=False):
+                    start_el = match
+                    break
+
+            end_el = None
+            for el in post_reply:
+                match = real_body.find(id=el.get("id")) if el.get("id") else None
+                if not match and el.name in {"footer", "aside"}:
+                    match = real_body.find(el.name)
+                if match and match in real_body.find_all(recursive=False):
+                    end_el = match
+                    break
+
+            real_direct_children = [c for c in real_body.children if isinstance(c, Tag)]
+            start_idx = (real_direct_children.index(start_el) + 1) if start_el and start_el in real_direct_children else 0
+            end_idx = real_direct_children.index(end_el) if end_el and end_el in real_direct_children else len(real_direct_children)
+            real_to_wrap = real_direct_children[start_idx:end_idx]
+
+        # If boundaries didn't resolve, match children with duplicate-ID tracking
+        if not real_to_wrap:
+            used_elements = set()
+            for c in [ch for ch in reply_main.children if isinstance(ch, Tag)]:
+                wid = c.get("id")
+                if wid:
+                    for el in real_body.find_all(id=wid, recursive=False):
+                        if id(el) not in used_elements:
+                            real_to_wrap.append(el)
+                            used_elements.add(id(el))
+                            break
+
+        if real_to_wrap:
+            new_container = real_body.new_tag("main", **reply_main.attrs)
+            real_to_wrap[0].insert_before(new_container)
+            for el in real_to_wrap:
+                new_container.append(el.extract())
+            print(f"[_apply_layout_landmarks] Inserted <main> wrapping {len(real_to_wrap)} elements!")
+
+
 def apply_reply(target, reply, token):
     """Replace `target` with every element in the reply fragment, in document order."""
     text = clean_reply(reply)
@@ -72,6 +162,12 @@ def apply_reply(target, reply, token):
         replacement_target = same_tag or elements[0]
         replacement_target[MARKER] = token
         warnings.append("marker_readded" if same_tag else "marker_ambiguous")
+
+    if target.name in {"html", "body"}:
+        if replacement_target.name == target.name:
+            target.attrs.update(replacement_target.attrs)
+        _apply_layout_landmarks(target, elements)
+        return PatchResult(True, "applied", warnings)
 
     if replacement_target.name != target.name:
         warnings.append("tag_changed")

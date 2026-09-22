@@ -24,10 +24,15 @@ def _count_issues(violations: list[dict]) -> int:
 
 
 def _summarize(request: "RepairRequest", run, issues_before: int, issues_after: int) -> str:
-    tail = f"{issues_before} -> {issues_after} issues ({run.api_calls} API calls, {run.total_tokens} tokens)"
+    tokens_detail = (
+        f"{run.total_tokens} tokens "
+        f"[{run.prompt_tokens} input, {run.completion_tokens} output, {run.thought_tokens} thought]"
+    )
+    tail = f"{issues_before} -> {issues_after} issues ({run.api_calls} API calls, {tokens_detail})"
     if request.use_sdg:
         applied = sum(1 for s in run.steps if s.status == "applied")
-        return f"SDG repair: {applied}/{len(run.steps)} elements patched, {run.unmapped} unmapped, {tail}."
+        cascaded = sum(1 for s in run.steps if s.status == "cascade_resolved")
+        return f"SDG repair: {applied} patched, {cascaded} cascaded, {len(run.steps)} total elements, {run.unmapped} unmapped, {tail}."
     step = run.steps[0] if run.steps else None
     return f"Baseline repair: {step.status if step else 'no_violations'}, {tail}."
 
@@ -36,10 +41,10 @@ def _summarize(request: "RepairRequest", run, issues_before: int, issues_after: 
 def repair_html(request: RepairRequest):
     try:
         violations_before = detect(request.html)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(
             status_code=503,
-            detail=f"Accessibility detection failed: {str(e)}",
+            detail=f"Accessibility detection failed: {e!s}",
         )
 
     issues_before = _count_issues(violations_before)
@@ -55,10 +60,10 @@ def repair_html(request: RepairRequest):
 
     try:
         violations_after = detect(run.fixed_html)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(
             status_code=503,
-            detail=f"Post-repair detection failed: {str(e)}",
+            detail=f"Post-repair detection failed: {e!s}",
         )
 
     issues_after = _count_issues(violations_after)

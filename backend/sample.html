@@ -12,7 +12,7 @@
     </nav>
 </header>
 
-<main id="content">
+<div id="content">
     <h1>Store</h1>
 
     <h2>Search</h2>
@@ -65,11 +65,24 @@
 
     <dl><dt>Term</dt><dd>Definition</dd></dl>
 
+    <div id="announcements">
+        <h3>Announcements</h3>
+        <li>Free shipping on orders over $50</li>
+        <li>New summer catalog available</li>
+        <li>Customer support open 24/7</li>
+    </div>
+
+    <div aria-hidden="true" id="promo-modal">
+        <button type="button">Dismiss promo</button>
+        <a href="#claim">Claim discount</a>
+        <input type="text" placeholder="Promo code">
+    </div>
+
     <aside>
         <h3>Related</h3>
         <a href="#result" aria-controls="result">Jump to result</a>
     </aside>
-</main>
+</div>
 
 <footer>
     <button tabindex="2">Second</button>

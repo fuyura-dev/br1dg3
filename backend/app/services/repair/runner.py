@@ -3,7 +3,13 @@ from dataclasses import dataclass, field
 from app.services.repair.context import ContextExtractor
 from app.services.repair.llm import LLMResult, generate
 from app.services.repair.order import dependency_view, order_violations_by_dependency
-from app.services.repair.patch import MARKER, apply_reply, outer_html, parse_document_reply, strip_markers
+from app.services.repair.patch import (
+    MARKER,
+    apply_reply,
+    outer_html,
+    parse_document_reply,
+    strip_markers,
+)
 from app.services.repair.prompt import build_baseline_prompt, build_sdg_prompt
 from app.services.sdg.builder import SDGBuilder
 
@@ -66,6 +72,58 @@ def _pending_violations(pending, table):
     ]
 
 
+def _is_landmark(el) -> bool:
+    """Check if an element qualifies as a WCAG/Axe landmark."""
+    if not hasattr(el, "name") or el.name is None:
+        return False
+    name = el.name.lower()
+    role = el.get("role", "").lower() if hasattr(el, "get") else ""
+
+    # Explicit ARIA landmark roles
+    if role in {"main", "navigation", "complementary", "search", "banner", "contentinfo"}:
+        return True
+    if role in {"region", "form"}:
+        return bool(el.get("aria-label") or el.get("aria-labelledby"))
+
+    # HTML5 tags
+    if name in {"main", "nav", "aside"}:
+        return True
+    if name in {"header", "footer"}:
+        # header and footer are landmarks (banner/contentinfo) ONLY if
+        # not a descendant of article, aside, main, nav, or section
+        sectioning = {"article", "aside", "main", "nav", "section"}
+        return not any(getattr(p, "name", "").lower() in sectioning for p in el.parents)
+    if name in {"section", "form"}:
+        return bool(el.get("aria-label") or el.get("aria-labelledby"))
+
+    return False
+
+
+
+
+def _is_already_satisfied(target, rule_id: str) -> bool:
+    """Check if a structural violation was fixed by a previous patch (cascade resolution)."""
+    ancestors = [target] + list(target.parents)
+    if rule_id == "region":
+        return any(_is_landmark(el) for el in ancestors)
+    elif rule_id == "listitem":
+        for el in target.parents:
+            if getattr(el, "name", "") in {"ul", "ol"} or getattr(el, "get", lambda k: None)("role") == "list":
+                return True
+        return False
+    elif rule_id == "dlitem":
+        for el in target.parents:
+            if getattr(el, "name", "") == "dl":
+                return True
+        return False
+    elif rule_id == "aria-hidden-focus":
+        for el in ancestors:
+            if getattr(el, "get", lambda k: None)("aria-hidden") == "true":
+                return False
+        return True
+    return False
+
+
 def _step(current, token, table, pending):
     """One repair step on the current document. Returns (Step, new current document)."""
     rules = [issue["id"] for issue in table[token]]
@@ -75,20 +133,53 @@ def _step(current, token, table, pending):
         return Step(token, None, rules, "element_gone"), current
 
     node_id = builder.element_to_id[target]
+
+    # Cascade resolution check
+    satisfactions = {r: _is_already_satisfied(target, r) for r in rules}
+    if all(satisfactions.values()):
+        print(f"[CASCADE RESOLVED {token}] <{target.name}> | Rules: {rules}")
+        return Step(token, target.name, rules, "cascade_resolved", node_id=node_id), current
+
+    # If some (but not all) rules were already resolved by ancestors, filter them out
+    # so the prompt only asks the LLM to repair the remaining unresolved violations.
+    active_issues = [issue for issue in table[token] if not satisfactions.get(issue["id"], False)]
+    if len(active_issues) < len(table[token]):
+        table[token] = active_issues
+        rules = [issue["id"] for issue in active_issues]
+
+    parent_names = [getattr(p, "name", "") for p in target.parents if getattr(p, "name", None)]
+    print(f"[NOT CASCADED {token}] <{target.name}> | Rules: {rules} | Satisfied: {satisfactions} | Parents: {parent_names[:4]}")
+
     step = Step(token, target.name, rules, "", node_id=node_id)
 
     ctx = ContextExtractor.from_builder(builder).extract(node_id)
+    sdg_prompt = build_sdg_prompt(ctx, builder.element_to_id)
+    print(
+        f"[STEP {token}] Target: <{target.name}> | Rules: {rules} | "
+        f"Prompt Size: {len(sdg_prompt.user) + len(sdg_prompt.system)} chars (~{(len(sdg_prompt.user) + len(sdg_prompt.system)) // 4} est tokens)"
+    )
+
     try:
-        step.llm = generate(build_sdg_prompt(ctx, builder.element_to_id))
+        step.llm = generate(sdg_prompt)
     except Exception as exc:                                               # noqa: BLE001
         step.status, step.error = "llm_error", f"{type(exc).__name__}: {exc}"
+        print(f"[STEP {token}] LLM Error: {step.error}")
         return step, current
     if not step.llm.ok:                                                    # truncated / failed / empty
         step.status = f"llm_not_ok:{step.llm.status}"
+        print(f"[STEP {token}] LLM Not OK: status={step.llm.status}")
         return step, current
 
+    print(f"[STEP {token}] LLM Reply ({len(step.llm.text)} chars):\n{step.llm.text.strip()}\n" + "-" * 40)
     patch = apply_reply(target, step.llm.text, token)                      # mutates builder.soup
     step.status, step.warnings = patch.status, patch.warnings
+
+
+    print(
+        f"[STEP {token}] Applied: status={step.status} warnings={step.warnings} | "
+        f"Tokens -> In: {step.llm.prompt_tokens}, Out: {step.llm.completion_tokens}, "
+        f"Thought: {step.llm.thought_tokens}, Total: {step.llm.total_tokens}"
+    )
     return step, (outer_html(builder.soup) if patch.applied else current)
 
 

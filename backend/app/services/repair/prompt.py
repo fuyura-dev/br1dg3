@@ -2,6 +2,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from app.services.repair.patch import MARKER, outer_html
+from bs4 import Tag
 
 VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
 SKIP_ATTRS = {"class", "style"}          # dropped from CONTEXT nodes only (also every data-* attribute)
@@ -114,6 +115,38 @@ def _snippet(element, limit=80):
     return f"{open_tag}{text}</{element.name}>"
 
 
+def _shallow_layout_tree(element, max_depth=2, current_depth=0):
+    """Render a shallow view of a root/layout element (e.g. html, body) down to max_depth hops,
+    collapsing deeper children with '…' so the LLM sees top-level sections without token explosions."""
+    if current_depth >= max_depth:
+        return _snippet(element)
+
+    if element.name == "head":
+        return "<head>…</head>"
+
+    attrs = []
+    for k, v in element.attrs.items():
+        if k in SKIP_ATTRS or k.startswith("data-"):
+            continue
+        if isinstance(v, list):
+            v = " ".join(v)
+        attrs.append(k if v == "" else f'{k}="{v}"')
+    open_tag = f"<{element.name}" + ((" " + " ".join(attrs)) if attrs else "") + ">"
+
+    if element.name in VOID_TAGS:
+        return open_tag
+
+    children_tags = [
+        c for c in element.children
+        if isinstance(c, Tag) and c.name not in {"script", "style", "noscript", "svg", "template"}
+    ]
+    if not children_tags:
+        return _snippet(element)
+
+    inner = "\n".join("  " * (current_depth + 1) + _shallow_layout_tree(c, max_depth, current_depth + 1) for c in children_tags)
+    return f"{open_tag}\n{inner}\n" + "  " * current_depth + f"</{element.name}>"
+
+
 def _chains_to_target(ctx, target, label):
     """One chain per family: walk back from the target along that family's edges (nearest ancestor
     first), then print it root -> ... -> [T]. Returns (lines, edges already used)."""
@@ -186,9 +219,17 @@ def build_sdg_prompt(ctx, element_ids):
         for i, v in enumerate(issues, 1)
     ) or "(none recorded)"
 
+    target_el = element_ids.element(target)
+    if target_el.name == "html":
+        target_markup = _shallow_layout_tree(target_el, max_depth=2)
+    elif target_el.name == "body":
+        target_markup = _shallow_layout_tree(target_el, max_depth=1)
+    else:
+        target_markup = outer_html(target_el)
+
     parts = [
         "## Violations on the target element\n" + violations,
-        f"## Target element [T]\n{outer_html(element_ids.element(target))}",
+        f"## Target element [T]\n{target_markup}",
     ]
 
     if others:
@@ -204,16 +245,24 @@ def build_sdg_prompt(ctx, element_ids):
     else:
         parts.append("## Related elements\nNone found.")
 
-    parts.append("Return only the HTML that replaces [T].")
+    if target_el.name in {"html", "body"}:
+        parts.append(
+            "Return only the HTML that replaces [T]. "
+            "For layout landmarks (<main>, <header>, <footer>), wrap or convert top-level body sections. "
+            "Keep inner section contents collapsed with … to keep the response concise."
+        )
+    else:
+        parts.append("Return only the HTML that replaces [T].")
     return Prompt(SDG_SYSTEM, "\n\n".join(parts))
 
 
 if __name__ == "__main__":
     import sys
     from pathlib import Path
-    from app.services.sdg.builder import SDGBuilder
+
     from app.services.repair.context import ContextExtractor
     from app.services.repair.order import order_violations_by_dependency
+    from app.services.sdg.builder import SDGBuilder
 
     # Parse arguments
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
@@ -237,7 +286,7 @@ if __name__ == "__main__":
         from app.services.detection.detect import detect
         violations = detect(html)
         print(f"[*] Detected {len(violations)} rule violations via axe-core.")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"[*] Axe detection unavailable ({e}). Using sample violations matching sample.html.")
         violations = [
             {

@@ -92,6 +92,14 @@ def generate(prompt) -> LLMResult:
     prompt_tokens = _get(usage, "total_input_tokens", 0) or 0
     completion_tokens = _get(usage, "total_output_tokens", 0) or 0
     thought_tokens = _get(usage, "total_thought_tokens", 0) or 0
+    total_tokens = _get(usage, "total_tokens", 0) or (prompt_tokens + completion_tokens + thought_tokens)
+
+    print(
+        f"[LLM] Status: {status} | Latency: {round(latency, 2)}s | "
+        f"Input: {prompt_tokens} | Output: {completion_tokens} | Thought: {thought_tokens} | Total: {total_tokens} tokens"
+    )
+    if not thought_tokens and not prompt_tokens:
+        print(f"[LLM] Raw usage object from API: {usage}")
 
     return LLMResult(
         text=text,
@@ -101,7 +109,7 @@ def generate(prompt) -> LLMResult:
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
         thought_tokens=thought_tokens,
-        total_tokens=_get(usage, "total_tokens", 0) or (prompt_tokens + completion_tokens + thought_tokens),
+        total_tokens=total_tokens,
         latency_s=round(latency, 3),
         attempts=attempts,
     )
