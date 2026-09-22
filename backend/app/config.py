@@ -11,8 +11,8 @@ class Settings:
         "*",
     )
 
-    LLM_API_KEY = os.getenv("LLM_API_KEY")
-    LLM_MODEL = os.getenv("LLM_MODEL")
+    LLM_API_KEY: str = os.getenv("LLM_API_KEY")
+    LLM_MODEL: str = os.getenv("LLM_MODEL")
 
     REMOTE_DRIVER_URL = os.getenv("REMOTE_DRIVER_URL")
     

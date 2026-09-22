@@ -2,8 +2,11 @@ from bs4 import BeautifulSoup, Tag
 
 Edge = tuple[str, str, str]
 relation = "form_group"
+name_relation = "name_group"
 
 FORM_CONTROLS = ["input", "select", "textarea", "button"]
+
+GROUPED_TYPES = {"radio", "checkbox"}
 
 
 def extract_form_group_edges(
@@ -41,19 +44,19 @@ def extract_form_group_edges(
             if control in element_to_id:
                 edges.append((form_id, element_to_id[control], relation))
 
-    radio_groups: dict[str, list[Tag]] = {}
-    for radio in soup.find_all("input", attrs={"type": "radio"}):
-        if radio.find_parent("fieldset"):
-            continue
+    # controls that share a name form a chain, per form and per type
+    name_groups: dict[tuple, list[Tag]] = {}
+    for control in soup.find_all("input", attrs={"type": lambda t: t and t.lower() in GROUPED_TYPES}):
+        name = control.get("name")
+        if name and control in element_to_id:
+            container = control.find_parent(["fieldset", "form"] if control["type"].lower() == "checkbox" else "form")
+            key = (id(container), control["type"].lower(), name.strip())
+            name_groups.setdefault(key, []).append(control)
 
-        name = radio.get("name")
-        if name and radio in element_to_id:
-            radio_groups.setdefault(name, []).append(radio)
-
-    for name, radios in radio_groups.items():
-        for i in range(len(radios) - 1):
-            source_id = element_to_id[radios[i]]
-            target_id = element_to_id[radios[i + 1]]
-            edges.append((source_id, target_id, relation))
+    for controls in name_groups.values():
+        for i in range(len(controls) - 1):
+            source_id = element_to_id[controls[i]]
+            target_id = element_to_id[controls[i + 1]]
+            edges.append((source_id, target_id, name_relation))
 
     return edges
