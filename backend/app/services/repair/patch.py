@@ -64,12 +64,14 @@ def apply_reply(target, reply, token):
     if not elements:
         return PatchResult(False, "no_element")
 
-    warnings = [f"elements_added:{len(elements)}"]
+    warnings = [f"elements_added:{len(elements)}"] if len(elements) > 1 else []
+
     replacement_target = _marker_owner(elements, token)
     if replacement_target is None:
-        replacement_target = elements[0]
+        same_tag = next((e for e in elements if e.name == target.name), None)
+        replacement_target = same_tag or elements[0]
         replacement_target[MARKER] = token
-        warnings.append("marker_readded")
+        warnings.append("marker_readded" if same_tag else "marker_ambiguous")
 
     if replacement_target.name != target.name:
         warnings.append("tag_changed")
