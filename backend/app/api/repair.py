@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.services.detection.detect import detect
@@ -33,8 +33,15 @@ def _summarize(request: "RepairRequest", run, issues_before: int, issues_after: 
 
 
 @router.post("/repair", response_model=RepairResponse)
-async def repair_html(request: RepairRequest):
-    violations_before = detect(request.html)                     # the ONLY axe run on the original page
+def repair_html(request: RepairRequest):
+    try:
+        violations_before = detect(request.html)
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Accessibility detection failed: {str(e)}",
+        )
+
     issues_before = _count_issues(violations_before)
 
     if not violations_before:
@@ -46,7 +53,14 @@ async def repair_html(request: RepairRequest):
     run = run_sdg(request.html, violations_before) if request.use_sdg \
         else run_baseline(request.html, violations_before)
 
-    violations_after = detect(run.fixed_html)                     # ground truth for what actually got fixed
+    try:
+        violations_after = detect(run.fixed_html)
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Post-repair detection failed: {str(e)}",
+        )
+
     issues_after = _count_issues(violations_after)
 
     return RepairResponse(
@@ -56,4 +70,5 @@ async def repair_html(request: RepairRequest):
         issues_fixed=issues_before - issues_after,
         summary=_summarize(request, run, issues_before, issues_after),
     )
+
 

@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.services.detection.detect import detect
@@ -27,8 +27,14 @@ class ScanResponse(BaseModel):
 
 
 @router.post("/scan", response_model=ScanResponse)
-async def scan_html(request: ScanRequest):
-    violations = detect(request.html)
+def scan_html(request: ScanRequest):
+    try:
+        violations = detect(request.html)
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Accessibility detection failed: {str(e)}",
+        )
 
     issues: list[Issue] = []
 
@@ -48,4 +54,5 @@ async def scan_html(request: ScanRequest):
             )
 
     return ScanResponse(total_issues=len(issues), issues=issues)
+
 

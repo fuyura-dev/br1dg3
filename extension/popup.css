@@ -237,3 +237,26 @@ input:checked + .slider:before {
   background-color: #F3F4F6;
   border-color: #D1D5DB;
 }
+
+.summary-box {
+  background-color: #F9FAFB;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 12px;
+}
+
+.summary-box h3 {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--primary-blue);
+  margin: 0 0 6px 0;
+}
+
+.summary-box p {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-main);
+  margin: 0;
+}

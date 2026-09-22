@@ -52,10 +52,15 @@
       throw new ApiError('Could not reach the backend. Is it running?');
     }
 
-    // The old version returned response.json() unconditionally, so a 500
-    // from the backend would be silently treated as a successful result.
     if (!response.ok) {
-      throw new ApiError(`Backend returned ${response.status} for ${endpoint}`, response.status);
+      let detail = '';
+      try {
+        const errorData = await response.json();
+        if (errorData && errorData.detail) {
+          detail = `: ${errorData.detail}`;
+        }
+      } catch (_) {}
+      throw new ApiError(`Backend returned ${response.status}${detail}`, response.status);
     }
 
     return response.json();
@@ -160,7 +165,9 @@
 
   function showError(message) {
     console.error(message);
-    alert(message);
+    if (elements && elements.statusMessage) {
+      elements.statusMessage.textContent = message;
+    }
   }
 
   function withButtonLoading(button, loadingLabel) {
@@ -208,14 +215,16 @@
       }
 
     } catch (error) {
-      showError('Error scanning page. Is the backend running?');
+      console.error('BR1DG3 Scan error:', error);
+      showError(error.message || 'Error scanning page. Is the backend running?');
       updateStats({ issues: 'Error', improvements: '--', structure: '--', result: 'Failed' });
       if (elements.statusMessage) {
-        elements.statusMessage.textContent = 'Scan failed. Check if backend is running.';
+        elements.statusMessage.textContent = error.message || 'Scan failed. Check if backend is running.';
       }
     } finally {
       restoreButton();
     }
+
   }
 
   async function enableAutoRepair(tab) {
@@ -225,10 +234,16 @@
     }
 
     const html = await getTabHtml(tab.id);
-    const { fixed_html, issues_fixed } = await api.repair(html);
+    const { fixed_html, issues_fixed, issues_after, summary } = await api.repair(html);
     await injectHtml(tab.id, fixed_html);
 
-    updateStats({ improvements: issues_fixed, result: 'Repaired' });
+    updateStats({ issues: issues_after, improvements: issues_fixed, result: 'Repaired' });
+
+    // Store summary in the box
+    const summaryContent = document.getElementById('summary-content');
+    if (summaryContent) {
+      summaryContent.textContent = summary;
+    }
     setStatusBadge('ON');
 
     if (elements.statusMessage) {
@@ -253,40 +268,23 @@
         await disableAutoRepair(tab);
       }
     } catch (error) {
-      showError('Failed to run Repair. Check if the backend is running.');
+      console.error('BR1DG3 Repair error:', error);
+      showError(error.message || 'Failed to run Repair. Check if the backend is running.');
+      if (elements.statusMessage) {
+        elements.statusMessage.textContent = error.message || 'Repair failed.';
+      }
       event.target.checked = !isEnabled;
       setStatusBadge(!isEnabled ? 'ON' : 'OFF');
     }
   }
 
-  async function handleViewSummary() {
-    const restoreButton = withButtonLoading(elements.viewSummaryBtn, 'Opening Studio...');
+  function handleViewSummary() {
+    const box = document.getElementById('summary-box');
+    if (!box) return;
 
-    try {
-      const tab = await getActiveTab();
-      // Kunin ang HTML ng kasalukuyang website
-      const html = await getTabHtml(tab.id);
-
-      // Buksan ang React Bridge Studio sa bagong tab
-      chrome.tabs.create({ url: 'http://localhost:5173/' }, (newTab) => {
-        // Lagyan ng delay para makapag-load muna ang React bago ipasa ang data
-        setTimeout(() => {
-          chrome.scripting.executeScript({
-            target: { tabId: newTab.id },
-            func: (sourceHtml) => {
-              // I-save ang HTML sa localStorage ng React app para mabasa nito
-              localStorage.setItem('br1dg3_source_html', sourceHtml);
-            },
-            args: [html],
-          });
-        }, 1500); // 1.5 seconds delay
-      });
-
-    } catch (error) {
-      showError('Error transferring data to Bridge Studio.');
-    } finally {
-      restoreButton();
-    }
+    const isHidden = box.style.display === 'none';
+    box.style.display = isHidden ? 'block' : 'none';
+    elements.viewSummaryBtn.textContent = isHidden ? 'Hide Summary' : 'View Summary';
   }
 
   async function handleRestore() {
