@@ -122,9 +122,10 @@
     return {
       autoRepairToggle: document.querySelector('.switch input'),
       statusBadge: document.querySelector('.status-badge'),
-      rescanBtn: resolveButton('rescan-btn', '.btn-primary', 0),
-      viewSummaryBtn: resolveButton('view-summary-btn', '.btn-primary', 1),
-      restoreBtn: document.querySelector('.btn-outline'),
+      statusMessage: document.getElementById('status-message'),
+      rescanBtn: document.getElementById('rescan-btn'),
+      viewSummaryBtn: document.getElementById('view-summary-btn'),
+      restoreBtn: document.getElementById('restore-btn'),
       statIssues: document.getElementById('stat-issues'),
       statImprovements: document.getElementById('stat-improvements'),
       statStructure: document.getElementById('stat-structure'),
@@ -146,6 +147,11 @@
     elements.statusBadge.textContent = text;
     elements.statusBadge.style.color = color;
     elements.statusBadge.style.borderColor = color;
+    if (state === 'OFF') {
+      elements.statusBadge.classList.add('off');
+    } else {
+      elements.statusBadge.classList.remove('off');
+    }
   }
 
   function setStatusText(text) {
@@ -194,9 +200,19 @@
         structure: 1,
         result: total_issues > 0 ? 'Needs Repair' : 'Clean',
       });
+
+      if (elements.statusMessage) {
+        elements.statusMessage.textContent = total_issues > 0
+          ? `Found ${total_issues} accessibility issue${total_issues === 1 ? '' : 's'}.`
+          : 'No accessibility issues found!';
+      }
+
     } catch (error) {
       showError('Error scanning page. Is the backend running?');
       updateStats({ issues: 'Error', improvements: '--', structure: '--', result: 'Failed' });
+      if (elements.statusMessage) {
+        elements.statusMessage.textContent = 'Scan failed. Check if backend is running.';
+      }
     } finally {
       restoreButton();
     }
@@ -204,6 +220,9 @@
 
   async function enableAutoRepair(tab) {
     setStatusText('Repairing...');
+    if (elements.statusMessage) {
+      elements.statusMessage.textContent = 'Repairing accessibility issues...';
+    }
 
     const html = await getTabHtml(tab.id);
     const { fixed_html, issues_fixed } = await api.repair(html);
@@ -211,6 +230,10 @@
 
     updateStats({ improvements: issues_fixed, result: 'Repaired' });
     setStatusBadge('ON');
+
+    if (elements.statusMessage) {
+      elements.statusMessage.textContent = `Repair applied: ${issues_fixed} issue${issues_fixed === 1 ? '' : 's'} fixed.`;
+    }
   }
 
   async function disableAutoRepair(tab) {
@@ -275,6 +298,11 @@
 
       elements.autoRepairToggle.checked = false;
       setStatusBadge('OFF');
+
+      if (elements.statusMessage) {
+        elements.statusMessage.textContent = 'Page restored to original.';
+      }
+
       alert('Webpage restored to original state!');
     } catch (error) {
       showError('Error restoring webpage.');
