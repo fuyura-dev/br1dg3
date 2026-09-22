@@ -3,8 +3,8 @@ from dataclasses import dataclass, field
 from app.services.repair.context import ContextExtractor
 from app.services.repair.llm import LLMResult, generate
 from app.services.repair.order import dependency_view, order_violations_by_dependency
-from app.services.repair.patch import MARKER, apply_reply, outer_html, strip_markers
-from app.services.repair.prompt import build_sdg_prompt
+from app.services.repair.patch import MARKER, apply_reply, outer_html, parse_document_reply, strip_markers
+from app.services.repair.prompt import build_baseline_prompt, build_sdg_prompt
 from app.services.sdg.builder import SDGBuilder
 
 
@@ -120,3 +120,23 @@ def run_sdg(html, violations):
         steps.append(step)
 
     return RepairRun(strip_markers(current), steps, unmapped)
+
+
+def run_baseline(html, violations):
+    """Zero-shot baseline: one call, the whole document, all violations at once."""
+    if not violations:
+        return RepairRun(html, [], 0)
+
+    step = Step("baseline", None, [v.get("id") for v in violations], "")
+    try:
+        step.llm = generate(build_baseline_prompt(html, violations))
+    except Exception as exc:                                              # noqa: BLE001
+        step.status, step.error = "llm_error", f"{type(exc).__name__}: {exc}"
+        return RepairRun(html, [step], 0)
+    if not step.llm.ok:                                                   # truncated / failed / empty
+        step.status = f"llm_not_ok:{step.llm.status}"
+        return RepairRun(html, [step], 0)
+
+    fixed_html, status = parse_document_reply(step.llm.text)
+    step.status = "applied" if status == "ok" else status
+    return RepairRun(fixed_html if status == "ok" else html, [step], 0)
