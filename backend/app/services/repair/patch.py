@@ -142,7 +142,8 @@ def _apply_layout_landmarks(target, elements):
             real_to_wrap[0].insert_before(new_container)
             for el in real_to_wrap:
                 new_container.append(el.extract())
-            print(f"[_apply_layout_landmarks] Inserted <main> wrapping {len(real_to_wrap)} elements!")
+            attrs_str = "".join(f' {k}="{v}"' for k, v in new_container.attrs.items())
+            print(f"[_apply_layout_landmarks] Inserted <{new_container.name}{attrs_str}> wrapping {len(real_to_wrap)} elements!")
 
 
 def apply_reply(target, reply, token):

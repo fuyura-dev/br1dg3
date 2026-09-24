@@ -1,8 +1,11 @@
+from typing import Any
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.services.detection.detect import detect
 from app.services.repair.runner import run_baseline, run_sdg
+from app.services.validation.evaluator import evaluate_repair
 
 router = APIRouter()
 
@@ -16,6 +19,7 @@ class RepairResponse(BaseModel):
     issues_after: int
     issues_fixed: int           # issues_before - issues_after (can be negative if repair regresses)
     summary: str
+    metrics: dict[str, Any] | None = None
 
 
 def _count_issues(violations: list[dict]) -> int:
@@ -68,12 +72,22 @@ def repair_html(request: RepairRequest):
 
     issues_after = _count_issues(violations_after)
 
+    metrics_report = evaluate_repair(
+        html_original=request.html,
+        html_repaired=run.fixed_html,
+        violations_before=violations_before,
+        violations_after=violations_after,
+        repair_run=run,
+        run_detection_if_missing=False,
+    )
+
     return RepairResponse(
         fixed_html=run.fixed_html,
         issues_before=issues_before,
         issues_after=issues_after,
         issues_fixed=issues_before - issues_after,
         summary=_summarize(request, run, issues_before, issues_after),
+        metrics=metrics_report.to_dict(),
     )
 
 

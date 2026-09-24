@@ -170,16 +170,16 @@ def _step(current, token, table, pending):
         print(f"[STEP {token}] LLM Not OK: status={step.llm.status}")
         return step, current
 
-    print(f"[STEP {token}] LLM Reply ({len(step.llm.text)} chars):\n{step.llm.text.strip()}\n" + "-" * 40)
+    print(f"[STEP {token}] LLM Reply ({len(step.llm.text)} chars):\n{step.llm.text.strip()}")
     patch = apply_reply(target, step.llm.text, token)                      # mutates builder.soup
     step.status, step.warnings = patch.status, patch.warnings
-
 
     print(
         f"[STEP {token}] Applied: status={step.status} warnings={step.warnings} | "
         f"Tokens -> In: {step.llm.prompt_tokens}, Out: {step.llm.completion_tokens}, "
         f"Thought: {step.llm.thought_tokens}, Total: {step.llm.total_tokens}"
     )
+    print("-" * 50)
     return step, (outer_html(builder.soup) if patch.applied else current)
 
 
