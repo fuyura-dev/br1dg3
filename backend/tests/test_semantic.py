@@ -38,12 +38,10 @@ class TestSemanticDependencyPreservation(unittest.TestCase):
 
     def test_accessibility_repair_preserves_relationships(self):
         # Changing div#content to main#content preserves all child relationships
-        # and creates new landmark relationships
         repaired = self.sample_html.replace('<div id="content">', '<main id="content">')
         result = calculate_semantic_preservation(self.sample_html, repaired)
         self.assertEqual(result.preservation_rate, 100.0)
         self.assertEqual(result.broken_count, 0)
-        self.assertGreaterEqual(result.created_count, 0)
 
     def test_breaking_edit_detected(self):
         # Delete the form and its inputs

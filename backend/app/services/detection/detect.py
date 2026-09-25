@@ -114,7 +114,25 @@ def detect(html: str):
         driver.set_script_timeout(15)
 
         driver.get('data:text/html,')
-        driver.execute_script('document.documentElement.innerHTML = arguments[0]', html)
+        driver.execute_script(
+            """
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(arguments[0], 'text/html');
+            const root = document.documentElement;
+            while (root.attributes.length > 0) {
+                root.removeAttribute(root.attributes[0].name);
+            }
+            if (doc.documentElement) {
+                for (const attr of Array.from(doc.documentElement.attributes)) {
+                    root.setAttribute(attr.name, attr.value);
+                }
+                root.innerHTML = doc.documentElement.innerHTML;
+            } else {
+                root.innerHTML = arguments[0];
+            }
+            """,
+            html,
+        )
         driver.execute_script(AXE_SCRIPT)
 
         violations = driver.execute_async_script(

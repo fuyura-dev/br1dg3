@@ -55,95 +55,158 @@ def _marker_owner(elements, token):
     return None
 
 
-def _apply_layout_landmarks(target, elements):
-    """Reconcile the LLM's structural layout decisions (renaming containers to <header>, <nav>,
-    <main>, <footer>, or wrapping content sections in <main>) onto the real DOM while preserving
-    all real inner contents, text, images, and data-br1dg3 tracking markers."""
+HIDDEN_IN_PROMPT_TAGS = {"script", "style", "link", "meta", "noscript", "svg", "template"}
+
+
+def _is_placeholder(tag: Tag) -> bool:
+    """True when the LLM kept the prompt's '…' ellipsis for collapsed inner content."""
+    return not tag.find(True) and tag.get_text(strip=True) == "…"
+
+
+def _match_real_element(reply_el: Tag, pool: list[Tag], used_ids: set[int]) -> Tag | None:
+    """Find the corresponding original DOM element for a reply element from `pool`."""
+    rid = reply_el.get("id")
+    if rid:
+        for el in pool:
+            if id(el) not in used_ids and el.get("id") == rid:
+                return el
+
+    # Match by same tag name + non-skipped attributes (or placeholder if original had children)
+    for el in pool:
+        if id(el) in used_ids or el.name != reply_el.name:
+            continue
+        if _is_placeholder(reply_el) and el.find(True):
+            return el
+        if not _is_placeholder(reply_el) and el.get_text(strip=True) == reply_el.get_text(strip=True):
+            return el
+
+    return None
+
+
+def _reconcile_container(real_container: Tag, reply_container: Tag) -> None:
+    """Generically reconcile a container (such as <head> or <body>) with the LLM's reply
+    by expanding '…' placeholders back to their original DOM nodes while keeping any
+    new elements, wrappers, or attribute changes returned by the LLM."""
+    if _is_placeholder(reply_container):
+        return
+
+    real_children = [c for c in real_container.children if isinstance(c, Tag)]
+    visible_pool = [c for c in real_children if c.name not in HIDDEN_IN_PROMPT_TAGS]
+    hidden_children = [c for c in real_children if c.name in HIDDEN_IN_PROMPT_TAGS]
+
+    used_ids: set[int] = set()
+    reply_tags = [c for c in reply_container.children if isinstance(c, Tag)]
+
+    # First pass: pre-claim exact ID matches anywhere in reply_container so nested
+    # elements (e.g. <div id="__nuxt">…</div> inside <main>) claim their real node.
+    id_map: dict[int, Tag] = {}
+    for candidate in reply_container.find_all(True):
+        cid = candidate.get("id")
+        if cid:
+            for real_el in visible_pool:
+                if id(real_el) not in used_ids and real_el.get("id") == cid:
+                    id_map[id(candidate)] = real_el
+                    used_ids.add(id(real_el))
+                    break
+
+    def hydrate_node(reply_node: Tag) -> list[Tag]:
+        matched = id_map.get(id(reply_node))
+        if matched is None:
+            matched = _match_real_element(reply_node, visible_pool, used_ids)
+            if matched is not None:
+                used_ids.add(id(matched))
+
+        if matched is not None:
+            matched.name = reply_node.name
+            for k, v in reply_node.attrs.items():
+                if k != MARKER:
+                    matched[k] = v
+            if not _is_placeholder(reply_node) and reply_node.find(True):
+                _reconcile_container(matched, reply_node)
+            return [matched.extract()]
+
+        # If this is an unmatched placeholder (e.g. LLM wrote <wrapper>…</wrapper> to wrap
+        # remaining visible children), wrap the remaining unused visible elements.
+        if _is_placeholder(reply_node):
+            remaining = [el for el in visible_pool if id(el) not in used_ids]
+            if remaining:
+                for el in remaining:
+                    used_ids.add(id(el))
+                wrapper = BeautifulSoup(f"<{reply_node.name}></{reply_node.name}>", "html.parser").find(reply_node.name)
+                for k, v in reply_node.attrs.items():
+                    if k != MARKER:
+                        wrapper[k] = v
+                for el in remaining:
+                    wrapper.append(el.extract())
+                return [wrapper]
+            return []
+
+        # Otherwise it is a newly introduced element or wrapper with children
+        child_tags = [c for c in reply_node.children if isinstance(c, Tag)]
+        if not child_tags:
+            cloned = BeautifulSoup(outer_html(reply_node), "html.parser").find(True)
+            if cloned is not None and MARKER in cloned.attrs:
+                del cloned[MARKER]
+            return [cloned] if cloned is not None else []
+
+        wrapper = BeautifulSoup(f"<{reply_node.name}></{reply_node.name}>", "html.parser").find(reply_node.name)
+        for k, v in reply_node.attrs.items():
+            if k != MARKER:
+                wrapper[k] = v
+        for child in child_tags:
+            for hydrated in hydrate_node(child):
+                wrapper.append(hydrated)
+        return [wrapper]
+
+    new_children: list[Tag] = []
+    for top_reply in reply_tags:
+        new_children.extend(hydrate_node(top_reply))
+
+    # Preserve any original visible elements the LLM omitted (e.g. <link> tags) and all hidden tags (<script>, <style>, etc.)
+    leftover_visible = [el.extract() for el in visible_pool if id(el) not in used_ids]
+    preserved_hidden = [el.extract() for el in hidden_children]
+
+    real_container.clear()
+    for el in new_children + leftover_visible + preserved_hidden:
+        real_container.append(el)
+
+
+def _apply_document_patch(target: Tag, elements: list[Tag]) -> None:
+    """Reconcile an <html> or <body> reply with the live BeautifulSoup tree by expanding
+    collapsed '…' placeholders back to their original DOM nodes."""
+    if target.name == "html":
+        reply_html = next((e for e in elements if e.name == "html"), None)
+        if reply_html is not None:
+            for k, v in reply_html.attrs.items():
+                target[k] = v
+            reply_head = reply_html.find("head", recursive=False)
+            if reply_head is not None and target.head is not None:
+                _reconcile_container(target.head, reply_head)
+            reply_body = reply_html.find("body", recursive=False)
+            if reply_body is not None and target.body is not None:
+                for k, v in reply_body.attrs.items():
+                    if k != MARKER:
+                        target.body[k] = v
+                _reconcile_container(target.body, reply_body)
+            return
+
     real_body = target.body if target.name == "html" else target
     if real_body is None:
         return
 
-    # Determine reply_body from elements
-    reply_body = None
-    for el in elements:
-        if el.name == "html":
-            reply_body = el.find("body")
-            break
-        elif el.name == "body":
-            reply_body = el
-            break
-
+    reply_body = next((e for e in elements if e.name == "body"), None)
     if reply_body is None:
-        # Elements are layout fragments like <header>, <main>, <footer>
         reply_body = BeautifulSoup("<body></body>", "html.parser").body
         for el in elements:
             reply_body.append(el)
+    else:
+        for k, v in reply_body.attrs.items():
+            if k != MARKER:
+                real_body[k] = v
 
-    print(f"[_apply_layout_landmarks] target: <{target.name}> | reply_body tags: {[c.name for c in reply_body.children if isinstance(c, Tag)]}")
+    _reconcile_container(real_body, reply_body)
 
-    # 1. Conversions of existing elements
-    for reply_el in [c for c in reply_body.children if isinstance(c, Tag)]:
-        reply_id = reply_el.get("id")
-        if reply_id and real_body.find(id=reply_id):
-            real_el = real_body.find(id=reply_id)
-            if real_el.name != reply_el.name:
-                real_el.name = reply_el.name
-            real_el.attrs.update(reply_el.attrs)
-            print(f"[_apply_layout_landmarks] Converted element #{reply_id} -> <{real_el.name}>")
 
-    # 2. Main landmark insertion (boundary-aware and duplicate-ID safe)
-    reply_main = reply_body.find("main")
-    if reply_main and not real_body.find("main"):
-        reply_children = [c for c in reply_body.children if isinstance(c, Tag)]
-        main_idx = reply_children.index(reply_main) if reply_main in reply_children else -1
-
-        real_to_wrap = []
-        if main_idx >= 0:
-            pre_reply = reply_children[:main_idx]
-            post_reply = reply_children[main_idx + 1:]
-
-            start_el = None
-            for el in reversed(pre_reply):
-                match = real_body.find(id=el.get("id")) if el.get("id") else None
-                if not match and el.name in {"header", "nav", "h1"}:
-                    match = real_body.find(el.name)
-                if match and match in real_body.find_all(recursive=False):
-                    start_el = match
-                    break
-
-            end_el = None
-            for el in post_reply:
-                match = real_body.find(id=el.get("id")) if el.get("id") else None
-                if not match and el.name in {"footer", "aside"}:
-                    match = real_body.find(el.name)
-                if match and match in real_body.find_all(recursive=False):
-                    end_el = match
-                    break
-
-            real_direct_children = [c for c in real_body.children if isinstance(c, Tag)]
-            start_idx = (real_direct_children.index(start_el) + 1) if start_el and start_el in real_direct_children else 0
-            end_idx = real_direct_children.index(end_el) if end_el and end_el in real_direct_children else len(real_direct_children)
-            real_to_wrap = real_direct_children[start_idx:end_idx]
-
-        # If boundaries didn't resolve, match children with duplicate-ID tracking
-        if not real_to_wrap:
-            used_elements = set()
-            for c in [ch for ch in reply_main.children if isinstance(ch, Tag)]:
-                wid = c.get("id")
-                if wid:
-                    for el in real_body.find_all(id=wid, recursive=False):
-                        if id(el) not in used_elements:
-                            real_to_wrap.append(el)
-                            used_elements.add(id(el))
-                            break
-
-        if real_to_wrap:
-            new_container = real_body.new_tag("main", **reply_main.attrs)
-            real_to_wrap[0].insert_before(new_container)
-            for el in real_to_wrap:
-                new_container.append(el.extract())
-            attrs_str = "".join(f' {k}="{v}"' for k, v in new_container.attrs.items())
-            print(f"[_apply_layout_landmarks] Inserted <{new_container.name}{attrs_str}> wrapping {len(real_to_wrap)} elements!")
 
 
 def apply_reply(target, reply, token):
@@ -167,7 +230,7 @@ def apply_reply(target, reply, token):
     if target.name in {"html", "body"}:
         if replacement_target.name == target.name:
             target.attrs.update(replacement_target.attrs)
-        _apply_layout_landmarks(target, elements)
+        _apply_document_patch(target, elements)
         return PatchResult(True, "applied", warnings)
 
     if replacement_target.name != target.name:

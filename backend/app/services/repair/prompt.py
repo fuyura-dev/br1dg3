@@ -138,7 +138,7 @@ def _shallow_layout_tree(element, max_depth=2, current_depth=0):
 
     children_tags = [
         c for c in element.children
-        if isinstance(c, Tag) and c.name not in {"script", "style", "noscript", "svg", "template"}
+        if isinstance(c, Tag) and c.name not in {"script", "style", "link", "meta", "noscript", "svg", "template"}
     ]
     if not children_tags:
         return _snippet(element)
