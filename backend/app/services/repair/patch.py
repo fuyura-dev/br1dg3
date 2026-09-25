@@ -109,6 +109,32 @@ def _reconcile_container(real_container: Tag, reply_container: Tag) -> None:
                     used_ids.add(id(real_el))
                     break
 
+    # Fast path: if every top-level reply tag directly matches an existing visible element
+    # (no new wrapper tags or newly inserted sibling elements), update them in-place
+    # so all original newlines, indentation, comments, and hidden tags remain untouched.
+    temp_used: set[int] = set()
+    direct_matches: list[tuple[Tag, Tag]] = []
+    all_direct = True
+    for top_reply in reply_tags:
+        m = id_map.get(id(top_reply))
+        if m is None:
+            m = _match_real_element(top_reply, visible_pool, temp_used)
+        if m is None:
+            all_direct = False
+            break
+        temp_used.add(id(m))
+        direct_matches.append((top_reply, m))
+
+    if all_direct:
+        for top_reply, m in direct_matches:
+            m.name = top_reply.name
+            for k, v in top_reply.attrs.items():
+                if k != MARKER:
+                    m[k] = v
+            if not _is_placeholder(top_reply) and top_reply.find(True):
+                _reconcile_container(m, top_reply)
+        return
+
     def hydrate_node(reply_node: Tag) -> list[Tag]:
         matched = id_map.get(id(reply_node))
         if matched is None:
@@ -136,8 +162,10 @@ def _reconcile_container(real_container: Tag, reply_container: Tag) -> None:
                 for k, v in reply_node.attrs.items():
                     if k != MARKER:
                         wrapper[k] = v
+                wrapper.append("\n")
                 for el in remaining:
                     wrapper.append(el.extract())
+                    wrapper.append("\n")
                 return [wrapper]
             return []
 
@@ -153,9 +181,11 @@ def _reconcile_container(real_container: Tag, reply_container: Tag) -> None:
         for k, v in reply_node.attrs.items():
             if k != MARKER:
                 wrapper[k] = v
+        wrapper.append("\n")
         for child in child_tags:
             for hydrated in hydrate_node(child):
                 wrapper.append(hydrated)
+                wrapper.append("\n")
         return [wrapper]
 
     new_children: list[Tag] = []
@@ -167,8 +197,10 @@ def _reconcile_container(real_container: Tag, reply_container: Tag) -> None:
     preserved_hidden = [el.extract() for el in hidden_children]
 
     real_container.clear()
+    real_container.append("\n")
     for el in new_children + leftover_visible + preserved_hidden:
         real_container.append(el)
+        real_container.append("\n")
 
 
 def _apply_document_patch(target: Tag, elements: list[Tag]) -> None:
