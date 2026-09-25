@@ -3,7 +3,7 @@ import { accessibilityRepairService } from "../services/accessibilityRepairServi
 
 export function useAccessibilityStudio() {
   // Application states
-  const [status, setStatus] = useState("loading"); // 'idle' | 'loading' | 'success' | 'error'
+  const [status, setStatus] = useState("idle"); // 'idle' | 'scanning' | 'repairing' | 'success' | 'error'
   const [htmlSource, setHtmlSource] = useState("");
   const [repairedHtml, setRepairedHtml] = useState("");
   const [violations, setViolations] = useState([]);
@@ -15,96 +15,98 @@ export function useAccessibilityStudio() {
   const [repairs, setRepairs] = useState({});
 
   const [selectedViolationId, setSelectedViolationId] = useState(null);
+  const [errorMessage, setErrorMessage] = useState(null);
 
-  // 1. Live Scan: Execute real backend API call when user edits HTML or on extension load
+  // 1. Live Scan: Detect violations and build SDG via /api/graph
   const runScan = useCallback(async (newHtml) => {
-    setStatus("loading");
+    setStatus("scanning");
+    setErrorMessage(null);
     setHtmlSource(newHtml);
-    setSelectedViolationId(null); // Reset selection on new scan
+    setRepairedHtml("");
+    setEvaluationMetrics([]);
+    setSelectedViolationId(null);
 
     try {
-      // Trigger the real backend scan via the service
       const result = await accessibilityRepairService.scanHtml(newHtml);
-      
-      // Update the entire workspace with the live API response
-      setViolations(result.violations || []);
+      const nextViolations = result.violations || [];
+
+      setViolations(nextViolations);
       setDocumentGraph(result.documentGraph || { nodes: [], links: [] });
-      
-      // Assuming the API returns context/repairs keyed by violation ID
-      setSdgContexts(result.sdgGraph || {}); 
-      setRepairs(result.repairs || {});      
-      
-      setEvaluationMetrics(result.evaluationMetrics || []);
-      setRepairedHtml(result.repairedHtml || newHtml);
-      
+      setSdgContexts(result.sdgGraph || {});
+      setRepairs(result.repairs || {});
+      if (nextViolations.length > 0) {
+        setSelectedViolationId(nextViolations[0].id);
+      }
+
       setStatus("success");
     } catch (error) {
       console.error("Live scan failed:", error);
+      setErrorMessage(error.message || "Failed to connect to the backend API (http://127.0.0.1:8000).");
       setStatus("error");
     }
   }, []);
 
-  // 2. Initial Load: Check for extension payload or fallback to mock data
-  useEffect(() => {
-    let isMounted = true;
-    
-    async function loadWorkspace() {
-      try {
-        // Check if the Chrome extension passed HTML via localStorage
-        const extensionHtml = localStorage.getItem('br1dg3_source_html');
-        
-        if (extensionHtml) {
-          // If launched from the extension, run the real backend scan immediately
-          await runScan(extensionHtml);
-          
-          // Clean up storage so it doesn't affect future direct visits
-          localStorage.removeItem('br1dg3_source_html');
-        } else {
-          // Fallback to mock data for standalone UI testing
-          const data = await accessibilityRepairService.getWorkspace();
-          if (!isMounted) return;
+  // 2. Live Repair: Execute SDG-guided repair and compute evaluation metrics via /api/repair
+  const runRepair = useCallback(async (newHtml) => {
+    setStatus("repairing");
+    setErrorMessage(null);
+    setHtmlSource(newHtml);
 
-          setHtmlSource(data.htmlSource);
-          setRepairedHtml(data.repairedHtml);
-          setViolations(data.violations);
-          setEvaluationMetrics(data.evaluationMetrics);
-          setDocumentGraph(data.documentGraph);
-          setStatus("success");
-        }
-      } catch (error) {
-        console.error("Failed to load workspace:", error);
-        if (isMounted) setStatus("error");
-      }
+    try {
+      const result = await accessibilityRepairService.repairHtml(newHtml);
+      const nextViolations = result.violations || [];
+
+      setViolations(nextViolations);
+      setDocumentGraph(result.documentGraph || { nodes: [], links: [] });
+      setSdgContexts(result.sdgGraph || {});
+      setRepairs(result.repairs || {});
+      setEvaluationMetrics(result.evaluationMetrics || []);
+      setRepairedHtml(result.repairedHtml || newHtml);
+      setSelectedViolationId((prev) => {
+        if (prev && nextViolations.some((v) => v.id === prev)) return prev;
+        return nextViolations.length > 0 ? nextViolations[0].id : null;
+      });
+
+      setStatus("success");
+    } catch (error) {
+      console.error("Live repair failed:", error);
+      setErrorMessage(error.message || "Failed to connect to the backend API (http://127.0.0.1:8000).");
+      setStatus("error");
     }
+  }, []);
 
-    loadWorkspace();
-    return () => { isMounted = false; };
+  // 3. Initial Load: Check if the Chrome extension passed HTML via localStorage
+  useEffect(() => {
+    const extensionHtml = localStorage.getItem("br1dg3_source_html");
+    if (extensionHtml) {
+      localStorage.removeItem("br1dg3_source_html");
+      runScan(extensionHtml);
+    }
   }, [runScan]);
 
-  // 3. Select Violation: Fetch detailed SDG context and repair strategies
+  // 4. Select Violation: Fetch detailed SDG context and repair strategies
   const selectViolation = useCallback(async (violationId) => {
     setSelectedViolationId(violationId);
 
-    // Fetch SDG context if not already loaded in state
     if (violationId && !sdgContexts[violationId]) {
       const context = await accessibilityRepairService.getSdgContext(violationId);
-      setSdgContexts(prev => ({ ...prev, [violationId]: context }));
+      setSdgContexts((prev) => ({ ...prev, [violationId]: context }));
     }
 
-    // Fetch Repair details if not already loaded in state
     if (violationId && !repairs[violationId]) {
       const repair = await accessibilityRepairService.getRepair(violationId);
-      setRepairs(prev => ({ ...prev, [violationId]: repair }));
+      setRepairs((prev) => ({ ...prev, [violationId]: repair }));
     }
   }, [sdgContexts, repairs]);
 
   // Derived state for the currently selected violation
-  const selectedViolation = violations.find(v => v.id === selectedViolationId) || null;
+  const selectedViolation = violations.find((v) => v.id === selectedViolationId) || null;
   const sdgContext = selectedViolationId ? sdgContexts[selectedViolationId] : null;
   const repair = selectedViolationId ? repairs[selectedViolationId] : null;
 
   return {
     status,
+    errorMessage,
     htmlSource,
     repairedHtml,
     violations,
@@ -114,6 +116,7 @@ export function useAccessibilityStudio() {
     sdgContext,
     repair,
     selectViolation,
-    runScan, // Exported so HtmlEditor can trigger it manually
+    runScan,
+    runRepair,
   };
 }

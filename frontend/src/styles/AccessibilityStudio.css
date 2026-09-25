@@ -29,15 +29,29 @@
 
 .accessibility-studio__workspace {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 16px;
   align-items: stretch;
-  height: 75vh;
+  height: 560px;
+}
+
+.accessibility-studio__workspace > * {
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
 }
 
 @media (max-width: 1100px) {
   .accessibility-studio__workspace {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto;
+    height: auto;
+  }
+
+  .accessibility-studio__workspace > * {
+    height: 480px;
+    max-height: 480px;
   }
 
   .accessibility-studio__workspace > *:first-child {
@@ -51,7 +65,14 @@
   }
 
   .accessibility-studio__workspace {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    height: auto;
+  }
+
+  .accessibility-studio__workspace > * {
+    height: 440px;
+    max-height: 440px;
   }
 
   .accessibility-studio__workspace > *:first-child {

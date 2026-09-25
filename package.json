@@ -1,6 +1,0 @@
-{
-  "dependencies": {
-    "react-diff-viewer-continued": "^4.4.0",
-    "react-force-graph-2d": "^1.29.1"
-  }
-}

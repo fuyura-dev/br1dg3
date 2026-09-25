@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.services.detection.detect import detect
@@ -35,12 +35,18 @@ class GraphResponse(BaseModel):
 
 
 @router.post("/graph", response_model=GraphResponse)
-async def get_dependency_graph(request: GraphRequest):
-    violations = detect(request.html)
+def get_dependency_graph(request: GraphRequest):
+    try:
+        violations = detect(request.html)
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Accessibility detection failed: {str(e)}",
+        )
 
     builder = SDGBuilder(request.html, violations=violations)
     graph_data = builder.to_dict()
 
-
     return GraphResponse(nodes=graph_data["nodes"], links=graph_data["edges"])
+
 

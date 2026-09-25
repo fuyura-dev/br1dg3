@@ -57,22 +57,96 @@ RELEVANT_RULES = (
     "region",
 )
 
-def detect(html: str):
+import logging
+import socket
+import urllib.parse
+
+logger = logging.getLogger(__name__)
+
+options.add_argument("--disable-dev-shm-usage")
+options.add_argument("--disable-extensions")
+
+
+def _is_remote_driver_reachable(url: str, timeout: float = 2.0) -> bool:
+    """Quickly check if the remote webdriver host:port is accepting connections."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        host = parsed.hostname
+        if not host:
+            return False
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except (OSError, ValueError):
+        return False
+
+
+def _get_driver():
     if settings.REMOTE_DRIVER_URL:
-        driver = webdriver.Remote(settings.REMOTE_DRIVER_URL, options=options)
-    else:
-        driver = webdriver.Chrome(options=options)
+        if _is_remote_driver_reachable(settings.REMOTE_DRIVER_URL, timeout=2.0):
+            try:
+                return webdriver.Remote(settings.REMOTE_DRIVER_URL, options=options)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to connect to REMOTE_DRIVER_URL {settings.REMOTE_DRIVER_URL}: {e}. "
+                    "Attempting local Chrome."
+                )
+        else:
+            logger.warning(
+                f"REMOTE_DRIVER_URL {settings.REMOTE_DRIVER_URL} is not reachable. "
+                "Attempting local Chrome."
+            )
 
-    driver.get('data:text/html,')
+    try:
+        return webdriver.Chrome(options=options)
+    except Exception as e:
+        raise RuntimeError(
+            "Chrome/ChromeDriver is not available. "
+            "Please install google-chrome-stable in WSL or set a reachable REMOTE_DRIVER_URL in .env"
+        ) from e
 
-    driver.execute_script('document.documentElement.innerHTML = arguments[0]', html)
-    driver.execute_script(AXE_SCRIPT)
 
-    violations = driver.execute_async_script(
-        'axe.run({}, (err, results) => arguments[0](results))'
-    )['violations']
+def detect(html: str):
+    driver = None
+    try:
+        driver = _get_driver()
+        driver.set_page_load_timeout(10)
+        driver.set_script_timeout(15)
 
-    return list(filter(lambda v: v['id'] in RELEVANT_RULES, violations))
+        driver.get('data:text/html,')
+        driver.execute_script(
+            """
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(arguments[0], 'text/html');
+            const root = document.documentElement;
+            while (root.attributes.length > 0) {
+                root.removeAttribute(root.attributes[0].name);
+            }
+            if (doc.documentElement) {
+                for (const attr of Array.from(doc.documentElement.attributes)) {
+                    root.setAttribute(attr.name, attr.value);
+                }
+                root.innerHTML = doc.documentElement.innerHTML;
+            } else {
+                root.innerHTML = arguments[0];
+            }
+            """,
+            html,
+        )
+        driver.execute_script(AXE_SCRIPT)
+
+        violations = driver.execute_async_script(
+            'axe.run({}, (err, results) => arguments[0](results))'
+        )['violations']
+
+        return list(filter(lambda v: v['id'] in RELEVANT_RULES, violations))
+    finally:
+        if driver:
+            try:
+                driver.quit()
+            except Exception:
+                pass
+
 
 if __name__ == '__main__':
     HTML = """

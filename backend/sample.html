@@ -1,0 +1,92 @@
+<header>
+    <nav aria-label="Main menu">
+        <ul>
+            <li><a href="#content">Skip to content</a></li>
+            <li>Products
+                <ul>
+                    <li><a href="/new">New arrivals</a></li>
+                    <li><a href="/sale">On sale</a></li>
+                </ul>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+<div id="content">
+    <h1>Store</h1>
+
+    <h2>Search</h2>
+    <div role="search">
+        <label for="q">Query</label>
+        <input type="text" id="q" list="suggestions">
+        <datalist id="suggestions">
+            <option value="shoes">
+            <option value="boots">
+        </datalist>
+    </div>
+
+    <h2>Account form</h2>
+    <form id="signup">
+        <fieldset>
+            <legend>Personal details</legend>
+            <label>Name <input type="text" name="fullname"></label>
+            <label id="email-label" for="email">Email</label>
+            <input type="email" id="email" aria-labelledby="email-label" aria-describedby="email-hint">
+            <span id="email-hint">We never share it</span>
+        </fieldset>
+        <input type="radio" name="plan" value="basic">
+        <input type="radio" name="plan" value="pro">
+        <select name="country">
+            <optgroup label="Asia">
+                <option value="ph">Philippines</option>
+                <option value="jp">Japan</option>
+            </optgroup>
+        </select>
+        <button type="submit" aria-controls="result">Send</button>
+    </form>
+    <input type="text" name="outside" form="signup">
+    <div id="result">Result here</div>
+
+    <h4>Skipped level</h4>
+
+    <h2>Data</h2>
+    <table>
+        <thead>
+            <tr><th id="h-item">Item</th><th id="h-qty">Qty</th></tr>
+        </thead>
+        <tbody>
+            <tr><td headers="h-item">Apples</td><td headers="h-qty">3</td></tr>
+            <tr>
+                <td headers="h-item">Pears</td>
+                <td><table><tr><td>Nested cell</td></tr></table></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <dl><dt>Term</dt><dd>Definition</dd></dl>
+
+    <div id="announcements">
+        <h3>Announcements</h3>
+        <li>Free shipping on orders over $50</li>
+        <li>New summer catalog available</li>
+        <li>Customer support open 24/7</li>
+    </div>
+
+    <div aria-hidden="true" id="promo-modal">
+        <button type="button">Dismiss promo</button>
+        <a href="#claim">Claim discount</a>
+        <input type="text" placeholder="Promo code">
+    </div>
+
+    <aside>
+        <h3>Related</h3>
+        <a href="#result" aria-controls="result">Jump to result</a>
+    </aside>
+</div>
+
+<footer>
+    <button tabindex="2">Second</button>
+    <button tabindex="1">First</button>
+    <button disabled>Off</button>
+    <input type="hidden" name="token">
+</footer>

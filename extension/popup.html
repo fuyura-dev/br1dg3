@@ -15,7 +15,7 @@
         <p class="subtitle">AUTOMATIC ACCESSIBILITY REPAIR</p>
         <h1 class="title">BR1DG3</h1>
       </div>
-      <div class="status-badge">ON</div>
+      <div class="status-badge off">OFF</div>
     </header>
 
     <!-- Auto-repair Section -->
@@ -25,7 +25,7 @@
         <p>Automatically improves page accessibility after the webpage loads.</p>
       </div>
       <label class="switch">
-        <input type="checkbox" checked>
+        <input type="checkbox">
         <span class="slider round"></span>
       </label>
     </div>
@@ -33,8 +33,8 @@
     <!-- Current Page Status -->
     <div class="card">
       <h2>Current Page Status</h2>
-      <div class="alert-success">
-        Page scanned and improved.
+      <div class="alert-success" id="status-message">
+        Ready to scan.
       </div>
       
       <div class="stats-grid">
@@ -47,20 +47,34 @@
           <span class="stat-value" id="stat-improvements">--</span>
         </div>
         <div class="stat-box">
-          <span class="stat-label">Page structure checked</span>
-          <span class="stat-value" id="stat-structure">--</span>
+          <span class="stat-label">Remaining issues</span>
+          <span class="stat-value" id="stat-remaining">--</span>
         </div>
         <div class="stat-box">
-          <span class="stat-label">Page result</span>
+          <span class="stat-label">Page status</span>
           <span class="stat-value" id="stat-result">--</span>
         </div>
       </div>
+    </div>
 
     <!-- Buttons -->
     <div class="button-group">
-      <button class="btn btn-primary">Re-scan Page</button>
-      <button class="btn btn-primary">View Summary</button>
-      <button class="btn btn-outline">Restore Original</button>
+      <button class="btn btn-primary" id="repair-btn" disabled>Repair Page</button>
+      <button class="btn btn-secondary" id="rescan-btn">Re-scan Page</button>
+      <button class="btn btn-secondary" id="view-summary-btn">View Summary</button>
+      <button class="btn btn-outline" id="restore-btn">Restore Original</button>
+    </div>
+
+    <!-- Summary Expandable Box -->
+    <div id="summary-box" class="summary-box" style="display: none;">
+      <div class="summary-section">
+        <h3>Repair Engine</h3>
+        <p id="summary-content">No repair performed yet. Run a repair to see the summary.</p>
+      </div>
+      <div class="summary-section" id="issues-list-section" style="display: none;">
+        <h3>Detected Issues</h3>
+        <ul id="issues-list" class="issues-list"></ul>
+      </div>
     </div>
 
   </div>

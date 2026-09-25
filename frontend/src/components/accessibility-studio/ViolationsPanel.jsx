@@ -8,16 +8,22 @@ function ViolationsPanel({ violations, selectedId, onSelect }) {
         <h2>Detected Violations</h2>
         <span className="panel-header__count">{violations.length} found</span>
       </header>
-      <ul className="violations-panel__list">
-        {violations.map((violation) => (
-          <ViolationItem
-            key={violation.id}
-            violation={violation}
-            isSelected={violation.id === selectedId}
-            onSelect={onSelect}
-          />
-        ))}
-      </ul>
+      {violations.length === 0 ? (
+        <p style={{ color: "var(--color-text-tertiary)", fontSize: "13px", margin: 0 }}>
+          No violations loaded. Enter HTML in the editor and click Run Scan.
+        </p>
+      ) : (
+        <ul className="violations-panel__list">
+          {violations.map((violation) => (
+            <ViolationItem
+              key={violation.id}
+              violation={violation}
+              isSelected={violation.id === selectedId}
+              onSelect={onSelect}
+            />
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
