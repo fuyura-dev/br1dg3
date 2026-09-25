@@ -4,123 +4,38 @@
   /**
    * BR1DG3 — Popup Script
    *
-   * Wires up the extension popup UI to the local FastAPI backend that scans,
-   * repairs, and graphs the accessibility structure of the active tab.
-   * Backend contract: POST /api/scan, POST /api/repair, POST /api/graph.
+   * Pure UI controller that reads and subscribes to tab state from
+   * chrome.storage.local and delegates explicit button clicks to
+   * background.js via chrome.runtime.sendMessage.
    */
-
-  // ---------------------------------------------------------------------
-  // Config
-  // ---------------------------------------------------------------------
-
-  const CONFIG = {
-    API_BASE_URL: 'http://127.0.0.1:8000/api',
-    ENDPOINTS: {
-      SCAN: '/scan',
-      REPAIR: '/repair',
-      GRAPH: '/graph',
-    },
-  };
 
   const STATUS_STYLES = {
     ON: { text: 'ON', color: 'var(--success-text)' },
     OFF: { text: 'OFF', color: 'var(--text-muted)' },
   };
 
-  // ---------------------------------------------------------------------
-  // API layer — the only place that knows about fetch(), headers, and
-  // error shapes. Everything else just calls api.scan/repair/graph().
-  // ---------------------------------------------------------------------
-
-  class ApiError extends Error {
-    constructor(message, status = 0) {
-      super(message);
-      this.name = 'ApiError';
-      this.status = status;
-    }
+  function getTabStateKey(tabId) {
+    return `tabState_${tabId}`;
   }
 
-  async function postJson(endpoint, payload) {
-    let response;
-    try {
-      response = await fetch(`${CONFIG.API_BASE_URL}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-    } catch (networkError) {
-      throw new ApiError('Could not reach the backend. Is it running?');
-    }
-
-    if (!response.ok) {
-      let detail = '';
-      try {
-        const errorData = await response.json();
-        if (errorData && errorData.detail) {
-          detail = `: ${errorData.detail}`;
-        }
-      } catch (_) {}
-      throw new ApiError(`Backend returned ${response.status}${detail}`, response.status);
-    }
-
-    return response.json();
+  async function getAutoRepairSetting() {
+    const { autoRepair } = await chrome.storage.local.get({ autoRepair: false });
+    return Boolean(autoRepair);
   }
 
-  const api = {
-    scan: (html) => postJson(CONFIG.ENDPOINTS.SCAN, { html }),
-    repair: (html) => postJson(CONFIG.ENDPOINTS.REPAIR, { html, use_sdg: true }),
-    graph: (html) => postJson(CONFIG.ENDPOINTS.GRAPH, { html }),
-  };
+  async function setAutoRepairSetting(enabled) {
+    await chrome.storage.local.set({ autoRepair: Boolean(enabled) });
+  }
 
-  // ---------------------------------------------------------------------
-  // Chrome tab helpers
-  // ---------------------------------------------------------------------
+  async function getTabState(tabId) {
+    const key = getTabStateKey(tabId);
+    const data = await chrome.storage.local.get(key);
+    return data[key] || null;
+  }
 
   async function getActiveTab() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     return tab;
-  }
-
-  async function getTabHtml(tabId) {
-    const [{ result }] = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => document.documentElement.outerHTML,
-    });
-    return result;
-  }
-
-  async function injectHtml(tabId, html) {
-    // document.write() fully re-parses the page — that's intentional, it's
-    // how the repaired HTML replaces the live DOM. Any in-page JS state is
-    // lost in the process, which is expected for a repair pass.
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      func: (newHtml) => {
-        document.open();
-        document.write(newHtml);
-        document.close();
-      },
-      args: [html],
-    });
-  }
-
-  // ---------------------------------------------------------------------
-  // DOM wiring
-  // ---------------------------------------------------------------------
-
-  // The old version picked buttons positionally
-  // (`document.querySelectorAll('.btn-primary')[0]`), which silently
-  // breaks the moment a button is added, removed, or reordered in
-  // popup.html. This resolves by id, with a console-warned fallback so
-  // nothing breaks today even before popup.html is updated with ids.
-  function resolveButton(id, fallbackSelector, fallbackIndex) {
-    const byId = document.getElementById(id);
-    if (byId) return byId;
-    console.warn(
-      `#${id} not found in popup.html — using "${fallbackSelector}"[${fallbackIndex}] instead. ` +
-      `Add id="${id}" to that button to remove this warning and this fallback.`
-    );
-    return document.querySelectorAll(fallbackSelector)[fallbackIndex] ?? null;
   }
 
   function queryElements() {
@@ -145,6 +60,7 @@
 
   let elements;
   let canRepair = false;
+  let currentTabId = null;
 
   function updateStats(partial) {
     if ('issues' in partial && elements.statIssues) elements.statIssues.textContent = partial.issues;
@@ -166,6 +82,11 @@
     }
   }
 
+  function syncBadgeWithToggle() {
+    const isAuto = Boolean(elements.autoRepairToggle && elements.autoRepairToggle.checked);
+    setStatusBadge(isAuto ? 'ON' : 'OFF');
+  }
+
   function setStatusText(text) {
     elements.statusBadge.textContent = text;
   }
@@ -175,17 +96,6 @@
     if (elements && elements.statusMessage) {
       elements.statusMessage.textContent = message;
     }
-  }
-
-  function withButtonLoading(button, loadingLabel) {
-    if (!button) return () => {};
-    const originalLabel = button.textContent;
-    button.textContent = loadingLabel;
-    button.disabled = true;
-    return () => {
-      button.textContent = originalLabel;
-      button.disabled = false;
-    };
   }
 
   function setControlsDisabled(disabled) {
@@ -249,149 +159,180 @@
     }
   }
 
-  // ---------------------------------------------------------------------
-  // Feature handlers — one function per user action, each owning its own
-  // try/catch/finally so a failure in one can't leave another mid-state.
-  // ---------------------------------------------------------------------
+  function applyTabStateToUi(state) {
+    if (!state) return;
 
-  async function handleScan() {
-    const restoreButton = withButtonLoading(elements.rescanBtn, 'Scanning...');
-    updateStats({ issues: '...', improvements: '...', remaining: '...', result: '...' });
+    if (state.status === 'scanning') {
+      if (elements.rescanBtn) elements.rescanBtn.textContent = 'Scanning...';
+      updateStats({ issues: '...', improvements: '...', remaining: '...', result: '...' });
+      if (elements.statusMessage) {
+        elements.statusMessage.textContent = 'Scanning page...';
+      }
+      setControlsDisabled(true);
+      return;
+    }
 
-    try {
-      const tab = await getActiveTab();
-      const html = await getTabHtml(tab.id);
-      const { total_issues, issues } = await api.scan(html);
+    if (elements.rescanBtn) elements.rescanBtn.textContent = 'Re-scan Page';
 
+    if (state.status === 'repairing') {
+      setStatusText('Repairing...');
+      if (elements.repairBtn) elements.repairBtn.textContent = 'Repairing...';
       updateStats({
-        issues: total_issues,
-        improvements: 0,
-        remaining: total_issues,
-        result: total_issues > 0 ? 'Needs Repair' : 'Clean',
+        issues: state.issues_before ?? '...',
+        improvements: '...',
+        remaining: '...',
+        result: 'Repairing...',
       });
+      if (elements.statusMessage) {
+        elements.statusMessage.textContent = 'Repairing accessibility issues...';
+      }
+      setControlsDisabled(true);
+      return;
+    }
 
-      canRepair = total_issues > 0;
+    if (state.status === 'scanned') {
+      const totalIssues = state.issues_before ?? 0;
+      updateStats({
+        issues: totalIssues,
+        improvements: 0,
+        remaining: totalIssues,
+        result: totalIssues > 0 ? 'Needs Repair' : 'Clean',
+      });
+      canRepair = totalIssues > 0;
       if (elements.repairBtn) {
         elements.repairBtn.disabled = !canRepair;
-        elements.repairBtn.textContent = total_issues === 0 ? 'No Repairs Needed' : 'Repair Page';
+        elements.repairBtn.textContent = totalIssues === 0 ? 'No Repairs Needed' : 'Repair Page';
       }
-
-      renderIssuesList(issues);
-
+      if (elements.summaryContent) {
+        elements.summaryContent.textContent =
+          state.summary || 'No repair performed yet. Run a repair to see the summary.';
+      }
+      renderIssuesList(state.issues || []);
       if (elements.statusMessage) {
-        elements.statusMessage.textContent = total_issues > 0
-          ? `Found ${total_issues} accessibility issue${total_issues === 1 ? '' : 's'}. Ready to repair.`
-          : 'No accessibility issues found!';
+        elements.statusMessage.textContent =
+          totalIssues > 0
+            ? `Found ${totalIssues} accessibility issue${totalIssues === 1 ? '' : 's'}. Ready to repair.`
+            : 'No accessibility issues found!';
       }
+      syncBadgeWithToggle();
+      setControlsDisabled(false);
+      return;
+    }
 
-      if (elements.autoRepairToggle && elements.autoRepairToggle.checked && total_issues > 0) {
-        await executeRepair(tab);
+    if (state.status === 'repaired') {
+      const { issues_before = 0, issues_fixed = 0, issues_after = 0, summary = '' } = state;
+      updateStats({
+        issues: issues_before,
+        improvements: issues_fixed,
+        remaining: issues_after,
+        result:
+          issues_after === 0
+            ? 'Repaired'
+            : issues_fixed > 0
+            ? 'Partially Repaired'
+            : 'Needs Repair',
+      });
+      if (elements.summaryContent && summary) {
+        elements.summaryContent.textContent = summary;
       }
+      canRepair = issues_after > 0;
+      if (elements.repairBtn) {
+        elements.repairBtn.disabled = !canRepair;
+        elements.repairBtn.textContent = issues_after === 0 ? 'Page Repaired' : 'Re-run Repair';
+      }
+      if (issues_after === 0) {
+        renderIssuesList([]);
+      } else {
+        renderIssuesList(state.issues || []);
+      }
+      syncBadgeWithToggle();
+      if (elements.statusMessage) {
+        elements.statusMessage.textContent = `Repair applied: ${issues_fixed} issue${issues_fixed === 1 ? '' : 's'} fixed, ${issues_after} remaining.`;
+      }
+      setControlsDisabled(false);
+      return;
+    }
 
-    } catch (error) {
-      console.error('BR1DG3 Scan error:', error);
-      showError(error.message || 'Error scanning page. Is the backend running?');
+    if (state.status === 'error') {
+      showError(state.error || 'Error scanning page. Is the backend running?');
       updateStats({ issues: 'Error', improvements: '--', remaining: '--', result: 'Failed' });
       canRepair = false;
       if (elements.repairBtn) {
         elements.repairBtn.disabled = true;
         elements.repairBtn.textContent = 'Repair Page';
       }
-      if (elements.statusMessage) {
-        elements.statusMessage.textContent = error.message || 'Scan failed. Check if backend is running.';
-      }
-    } finally {
-      restoreButton();
+      syncBadgeWithToggle();
+      setControlsDisabled(false);
     }
   }
 
-  async function executeRepair(tab) {
-    console.log('[BR1DG3] Executing repair on tab:', tab.id);
-    setStatusText('Repairing...');
-    if (elements.statusMessage) {
-      elements.statusMessage.textContent = 'Repairing accessibility issues...';
-    }
+  async function requestScan(forceScan = true) {
+    const tab = await getActiveTab();
+    if (!tab) return;
+    currentTabId = tab.id;
 
-    const html = await getTabHtml(tab.id);
-    console.log('[BR1DG3] Calling POST /api/repair (HTML length:', html ? html.length : 0, ')...');
-    const { fixed_html, issues_before, issues_fixed, issues_after, summary } = await api.repair(html);
-    console.log('[BR1DG3] Repair response:', { issues_before, issues_fixed, issues_after, summary });
-
-    await injectHtml(tab.id, fixed_html);
-    console.log('[BR1DG3] Injected repaired HTML into tab DOM.');
-
-    updateStats({
-      issues: issues_before,
-      improvements: issues_fixed,
-      remaining: issues_after,
-      result: issues_after === 0 ? 'Repaired' : (issues_fixed > 0 ? 'Partially Repaired' : 'Needs Repair'),
+    applyTabStateToUi({ status: 'scanning' });
+    const response = await chrome.runtime.sendMessage({
+      type: 'SCAN_TAB',
+      tabId: tab.id,
+      url: tab.url,
+      forceScan,
     });
-
-    if (elements.summaryContent) {
-      elements.summaryContent.textContent = summary;
+    if (response && response.state) {
+      applyTabStateToUi(response.state);
     }
+  }
 
-    canRepair = issues_after > 0;
-    if (elements.repairBtn) {
-      elements.repairBtn.disabled = !canRepair;
-      elements.repairBtn.textContent = issues_after === 0 ? 'Page Repaired' : 'Re-run Repair';
-    }
-
-    if (issues_after === 0 && elements.issuesListSection) {
-      elements.issuesListSection.style.display = 'none';
-    }
-
-    setStatusBadge('ON');
-
-    if (elements.statusMessage) {
-      elements.statusMessage.textContent = `Repair applied: ${issues_fixed} issue${issues_fixed === 1 ? '' : 's'} fixed, ${issues_after} remaining.`;
+  async function requestRepair(tab) {
+    const prev = await getTabState(tab.id);
+    applyTabStateToUi({
+      status: 'repairing',
+      issues_before: prev?.issues_before ?? '...',
+    });
+    const response = await chrome.runtime.sendMessage({
+      type: 'REPAIR_TAB',
+      tabId: tab.id,
+      url: tab.url,
+    });
+    if (response && response.state) {
+      applyTabStateToUi(response.state);
     }
   }
 
   async function handleManualRepair() {
-    if (!elements.repairBtn) return;
-    console.log('[BR1DG3] Repair button clicked.');
-    const originalLabel = elements.repairBtn.textContent;
-    elements.repairBtn.textContent = 'Repairing...';
-    elements.repairBtn.disabled = true;
-
-    try {
-      const tab = await getActiveTab();
-      await executeRepair(tab);
-    } catch (error) {
-      console.error('[BR1DG3] Repair error:', error);
-      showError(error.message || 'Failed to run repair.');
-      if (elements.statusMessage) {
-        elements.statusMessage.textContent = error.message || 'Repair failed.';
-      }
-      elements.repairBtn.textContent = originalLabel;
-      elements.repairBtn.disabled = false;
-    }
+    const tab = await getActiveTab();
+    if (!tab) return;
+    await requestRepair(tab);
   }
 
   async function disableAutoRepair(tab) {
     setStatusText('Restoring...');
+    await chrome.storage.local.remove(getTabStateKey(tab.id));
     await chrome.tabs.reload(tab.id);
     setStatusBadge('OFF');
   }
 
   async function handleAutoRepairToggle(event) {
     const isEnabled = event.target.checked;
+    await setAutoRepairSetting(isEnabled);
+    setStatusBadge(isEnabled ? 'ON' : 'OFF');
 
     try {
       const tab = await getActiveTab();
+      if (!tab) return;
       if (isEnabled) {
-        await executeRepair(tab);
+        const state = await getTabState(tab.id);
+        if (!state || (state.status !== 'repaired' && state.status !== 'repairing')) {
+          await requestRepair(tab);
+        }
       } else {
         await disableAutoRepair(tab);
       }
     } catch (error) {
       console.error('BR1DG3 Repair error:', error);
       showError(error.message || 'Failed to run Repair. Check if the backend is running.');
-      if (elements.statusMessage) {
-        elements.statusMessage.textContent = error.message || 'Repair failed.';
-      }
       event.target.checked = !isEnabled;
+      await setAutoRepairSetting(!isEnabled);
       setStatusBadge(!isEnabled ? 'ON' : 'OFF');
     }
   }
@@ -406,21 +347,26 @@
   }
 
   async function handleRestore() {
-    const restoreButton = withButtonLoading(elements.restoreBtn, 'Restoring...');
+    if (elements.restoreBtn) {
+      elements.restoreBtn.textContent = 'Restoring...';
+      elements.restoreBtn.disabled = true;
+    }
 
     try {
       const tab = await getActiveTab();
-      await chrome.tabs.reload(tab.id);
 
+      await setAutoRepairSetting(false);
       if (elements.autoRepairToggle) {
         elements.autoRepairToggle.checked = false;
       }
       setStatusBadge('OFF');
 
+      await chrome.storage.local.remove(getTabStateKey(tab.id));
+      await chrome.tabs.reload(tab.id);
+
       if (elements.statusMessage) {
         elements.statusMessage.textContent = 'Page restored to original.';
       }
-
       if (elements.summaryContent) {
         elements.summaryContent.textContent = 'No repair performed yet. Run a repair to see the summary.';
       }
@@ -430,57 +376,74 @@
         elements.repairBtn.disabled = true;
         elements.repairBtn.textContent = 'Repair Page';
       }
-
-      setTimeout(() => {
-        withExclusiveLock(handleScan);
-      }, 600);
     } catch (error) {
       showError('Error restoring webpage.');
     } finally {
-      restoreButton();
+      if (elements.restoreBtn) {
+        elements.restoreBtn.textContent = 'Restore Original';
+        elements.restoreBtn.disabled = false;
+      }
     }
   }
 
-  // ---------------------------------------------------------------------
-  // Init — a single busy-lock stops overlapping requests (e.g. clicking
-  // "Restore" while a scan is still in flight) from racing each other.
-  // ---------------------------------------------------------------------
-
-  let isBusy = false;
-
-  async function withExclusiveLock(action) {
-    if (isBusy) return;
-    isBusy = true;
-    setControlsDisabled(true);
-    try {
-      await action();
-    } finally {
-      isBusy = false;
-      setControlsDisabled(false);
+  async function initializePopup() {
+    const autoRepair = await getAutoRepairSetting();
+    if (elements.autoRepairToggle) {
+      elements.autoRepairToggle.checked = autoRepair;
     }
+    setStatusBadge(autoRepair ? 'ON' : 'OFF');
+
+    const tab = await getActiveTab();
+    if (!tab) return;
+    currentTabId = tab.id;
+
+    // Live-update UI whenever background.js updates chrome.storage.local
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== 'local') return;
+      if (changes.autoRepair && elements.autoRepairToggle) {
+        const enabled = Boolean(changes.autoRepair.newValue);
+        elements.autoRepairToggle.checked = enabled;
+        setStatusBadge(enabled ? 'ON' : 'OFF');
+      }
+      const tabKey = getTabStateKey(currentTabId);
+      if (changes[tabKey] && changes[tabKey].newValue) {
+        applyTabStateToUi(changes[tabKey].newValue);
+      }
+    });
+
+    const existingState = await getTabState(tab.id);
+
+    // If this tab already has a state (scanning, repairing, scanned, repaired, error),
+    // simply display it! Never automatically trigger a second scan when opening the popup.
+    if (existingState) {
+      applyTabStateToUi(existingState);
+      return;
+    }
+
+    // Only if this tab has no state at all (e.g. opened before extension was installed),
+    // ask background.js to check/scan it once.
+    await requestScan(false);
   }
 
   document.addEventListener('DOMContentLoaded', () => {
     elements = queryElements();
 
     if (elements.repairBtn) {
-      elements.repairBtn.addEventListener('click', () => withExclusiveLock(handleManualRepair));
+      elements.repairBtn.addEventListener('click', handleManualRepair);
     }
     if (elements.rescanBtn) {
-      elements.rescanBtn.addEventListener('click', () => withExclusiveLock(handleScan));
+      elements.rescanBtn.addEventListener('click', () => requestScan(true));
     }
     if (elements.viewSummaryBtn) {
       elements.viewSummaryBtn.addEventListener('click', handleViewSummary);
     }
     if (elements.restoreBtn) {
-      elements.restoreBtn.addEventListener('click', () => withExclusiveLock(handleRestore));
+      elements.restoreBtn.addEventListener('click', handleRestore);
     }
     if (elements.autoRepairToggle) {
-      elements.autoRepairToggle.addEventListener('change', (event) =>
-        withExclusiveLock(() => handleAutoRepairToggle(event))
-      );
+      elements.autoRepairToggle.addEventListener('change', handleAutoRepairToggle);
     }
 
-    withExclusiveLock(handleScan); // run a scan as soon as the popup opens
+    initializePopup();
   });
 })();
