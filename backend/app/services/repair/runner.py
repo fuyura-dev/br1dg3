@@ -22,6 +22,8 @@ class Step:
     status: str        # applied | element_gone | llm_error | llm_not_ok:<status> | empty_reply | no_element
     warnings: list[str] = field(default_factory=list)
     node_id: str | None = None          # the node id AT THAT STEP (ids shift as patches are applied)
+    original_node_id: str | None = None
+    related_relationships: list[str] = field(default_factory=list)
     llm: LLMResult | None = None
     error: str | None = None
 
@@ -153,6 +155,10 @@ def _step(current, token, table, pending):
     step = Step(token, target.name, rules, "", node_id=node_id)
 
     ctx = ContextExtractor.from_builder(builder).extract(node_id)
+    step.related_relationships = [
+        f"{d.get('relation')}: {ctx.nodes[u].get('label', u)} -> {ctx.nodes[v].get('label', v)}"
+        for u, v, d in ctx.edges(data=True)
+    ]
     sdg_prompt = build_sdg_prompt(ctx, builder.element_to_id)
     print(
         f"[STEP {token}] Target: <{target.name}> | Rules: {rules} | "
@@ -194,6 +200,7 @@ def run_sdg(html, violations):
 
     # 1. one token per violated element, stamped into the HTML; Axe details kept by token
     tokens = {node: f"v{i}" for i, node in enumerate(units, 1)}
+    orig_by_token = {token: node for node, token in tokens.items()}
     table = {}
     for node, token in tokens.items():
         builder.element_to_id.element(node)[MARKER] = token
@@ -207,6 +214,7 @@ def run_sdg(html, violations):
     pending, steps = set(table), []
     for token in order:
         step, current = _step(current, token, table, pending)
+        step.original_node_id = orig_by_token.get(token)
         pending.discard(token)
         steps.append(step)
 

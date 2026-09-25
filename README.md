@@ -23,21 +23,21 @@ Follow the instructions in the [Backend README](./backend/README.md):
 - [x] 8 relationships
 
 ### 3. LLM Repair
-- [ ] context extraction
-- [ ] repair order
-- [ ] prompt construction
-- [ ] baseline repair (if needed in tool defense)
+- [x] context extraction
+- [x] repair order
+- [x] prompt construction
+- [x] baseline repair (if needed in tool defense)
 
 ### 4. Validation & Evaluation (original document vs repaired wit SDG only)
-- [ ] Repair Effectiveness
-- [ ] Repair Safety
-- [ ] Structural Preservation
-- [ ] Repair Efficiency
-- [ ] Semantic Dependency Preservation
+- [x] Repair Effectiveness
+- [x] Repair Safety
+- [x] Structural Preservation
+- [x] Repair Efficiency
+- [x] Semantic Dependency Preservation
 
 ### 5. APIs
 - [x] API Skeleton
 - [x] connect `/api/scan`
 - [x] connect `/api/graph`
-- [ ] connect `/api/repair`
-- [ ] API for validation and evaluation details
+- [x] connect `/api/repair`
+- [x] API for validation and evaluation details (`/api/evaluate`)

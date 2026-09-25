@@ -49,6 +49,13 @@
   filter: brightness(1.08);
 }
 
+.diff-viewer__container {
+  max-height: 520px;
+  overflow: auto;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-code-border);
+}
+
 .diff-viewer__grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

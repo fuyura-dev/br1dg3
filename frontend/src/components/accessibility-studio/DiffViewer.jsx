@@ -21,8 +21,8 @@ function DiffViewer({ original, repaired }) {
     }
   }
 
-  // Huwag i-render kung wala pang laman ang mga codes
-  if (!safeOriginal && !safeRepaired) return null;
+  // Huwag i-render kung wala pang laman ang original o repaired HTML
+  if (!safeOriginal || !safeRepaired) return null;
 
   return (
     <section className="diff-viewer" aria-label="Original and repaired HTML comparison">

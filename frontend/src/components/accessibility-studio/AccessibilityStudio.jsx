@@ -14,6 +14,7 @@ import '../../styles/AccessibilityStudio.css';
 function AccessibilityStudio() {
   const {
     status,
+    errorMessage,
     htmlSource,
     repairedHtml,
     violations,
@@ -24,17 +25,10 @@ function AccessibilityStudio() {
     repair,
     selectViolation,
     runScan,
+    runRepair,
   } = useAccessibilityStudio();
 
   const [isGraphOpen, setGraphOpen] = useState(false);
-
-  if (status === "loading") {
-    return <div className="accessibility-studio"><p>Loading repair workspace...</p></div>;
-  }
-
-  if (status === "error") {
-    return <div className="accessibility-studio"><p>Error loading workspace.</p></div>;
-  }
 
   return (
     <div className="accessibility-studio">
@@ -42,16 +36,25 @@ function AccessibilityStudio() {
         <h1>BR1DG3 — Accessibility Repair Studio</h1>
       </header>
 
+      {errorMessage && (
+        <div role="alert" style={{ padding: "12px 16px", marginBottom: "16px", borderRadius: "8px", backgroundColor: "rgba(220, 38, 38, 0.15)", color: "#fca5a5", border: "1px solid rgba(220, 38, 38, 0.4)" }}>
+          {errorMessage}
+        </div>
+      )}
+
       <EvaluationSummary metrics={evaluationMetrics} />
 
       <div className="accessibility-studio__workspace">
         
         <HtmlEditor
           initialHtml={htmlSource}
-          isScanning={status === "loading"}
+          isScanning={status === "scanning"}
+          isRepairing={status === "repairing"}
           onRunScan={(newHtml) => {
-            // Triggers the real backend scan via the hook
             runScan(newHtml);
+          }}
+          onRunRepair={(newHtml) => {
+            runRepair(newHtml);
           }}
         />
 

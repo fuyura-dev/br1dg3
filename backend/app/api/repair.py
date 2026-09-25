@@ -20,6 +20,7 @@ class RepairResponse(BaseModel):
     issues_fixed: int           # issues_before - issues_after (can be negative if repair regresses)
     summary: str
     metrics: dict[str, Any] | None = None
+    steps: list[dict[str, Any]] | None = None
 
 
 def _count_issues(violations: list[dict]) -> int:
@@ -41,6 +42,24 @@ def _summarize(request: "RepairRequest", run, issues_before: int, issues_after: 
     return f"Baseline repair: {step.status if step else 'no_violations'}, {tail}."
 
 
+def _serialize_steps(run) -> list[dict[str, Any]]:
+    return [
+        {
+            "token": s.token,
+            "original_node_id": s.original_node_id,
+            "node_id": s.node_id,
+            "tag": s.tag,
+            "rules": s.rules,
+            "status": s.status,
+            "repaired_html": s.llm.text.strip() if s.llm and s.llm.text else None,
+            "related_relationships": s.related_relationships,
+            "warnings": s.warnings,
+            "error": s.error,
+        }
+        for s in run.steps
+    ]
+
+
 @router.post("/repair", response_model=RepairResponse)
 def repair_html(request: RepairRequest):
     try:
@@ -57,6 +76,7 @@ def repair_html(request: RepairRequest):
         return RepairResponse(
             fixed_html=request.html, issues_before=0, issues_after=0, issues_fixed=0,
             summary="No accessibility issues detected.",
+            steps=[],
         )
 
     run = run_sdg(request.html, violations_before) if request.use_sdg \
@@ -88,6 +108,7 @@ def repair_html(request: RepairRequest):
         issues_fixed=issues_before - issues_after,
         summary=_summarize(request, run, issues_before, issues_after),
         metrics=metrics_report.to_dict(),
+        steps=_serialize_steps(run),
     )
 
 
