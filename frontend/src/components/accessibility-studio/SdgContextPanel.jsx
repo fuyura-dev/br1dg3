@@ -1,5 +1,5 @@
 import { formatNodeLabel } from "../../utils/format.js";
-import '../../styles/SdgContextPanel.css';
+import "../../styles/SdgContextPanel.css";
 
 function RelationshipGroup({ title, items, emptyLabel }) {
   return (
@@ -11,10 +11,12 @@ function RelationshipGroup({ title, items, emptyLabel }) {
         <ul>
           {items.map((item, index) => (
             <li key={index} className="sdg-node">
-              {item.tag ? (
-                <code>{formatNodeLabel(item)}</code>
+              {item.label || item.tag ? (
+                <code>{item.label || formatNodeLabel(item)}</code>
               ) : (
-                <span className={`sdg-node__flag sdg-node__flag--${item.status}`}>{item.status}</span>
+                <span className={`sdg-node__flag sdg-node__flag--${item.status}`}>
+                  {item.status}
+                </span>
               )}
               {item.note && <span className="sdg-node__note">{item.note}</span>}
             </li>
@@ -35,10 +37,40 @@ function SdgContextPanel({ violation, context, onOpenGraph }) {
             View SDG Graph
           </button>
         </header>
-        <p className="sdg-panel__empty">Select a violation to inspect its structural dependencies.</p>
+        <p className="sdg-panel__empty">
+          Select a violation to inspect its structural dependencies.
+        </p>
       </section>
     );
   }
+
+  const groups = context.groups || [
+    {
+      title: "Parent",
+      items: context.parent ? [context.parent] : [],
+      emptyLabel: "No parent recorded",
+    },
+    {
+      title: "Children",
+      items: context.children,
+      emptyLabel: "No child elements",
+    },
+    {
+      title: "Label relationships",
+      items: context.labelRelationships,
+      emptyLabel: "No label relationship affected",
+    },
+    {
+      title: "Heading relationships",
+      items: context.headingRelationships,
+      emptyLabel: "No heading relationship affected",
+    },
+    {
+      title: "Form relationships",
+      items: context.formRelationships,
+      emptyLabel: "No form relationship affected",
+    },
+  ];
 
   return (
     <section className="sdg-panel" aria-label="Structural dependency graph context">
@@ -54,7 +86,7 @@ function SdgContextPanel({ violation, context, onOpenGraph }) {
 
       <div className="sdg-panel__target">
         <span>Target element</span>
-        <code>{formatNodeLabel(context.target)}</code>
+        <code>{context.target?.label || formatNodeLabel(context.target)}</code>
       </div>
 
       {context.domPath?.length > 0 && (
@@ -71,24 +103,14 @@ function SdgContextPanel({ violation, context, onOpenGraph }) {
       )}
 
       <div className="sdg-panel__groups">
-        <RelationshipGroup title="Parent" items={context.parent ? [context.parent] : []} emptyLabel="No parent recorded" />
-        <RelationshipGroup title="Children" items={context.children} emptyLabel="No child elements" />
-        <RelationshipGroup title="Siblings" items={context.siblings} emptyLabel="No related siblings" />
-        <RelationshipGroup
-          title="Label relationships"
-          items={context.labelRelationships}
-          emptyLabel="No label relationship affected"
-        />
-        <RelationshipGroup
-          title="Heading relationships"
-          items={context.headingRelationships}
-          emptyLabel="No heading relationship affected"
-        />
-        <RelationshipGroup
-          title="Form relationships"
-          items={context.formRelationships}
-          emptyLabel="No form relationship affected"
-        />
+        {groups.map((group) => (
+          <RelationshipGroup
+            key={group.title}
+            title={group.title}
+            items={group.items}
+            emptyLabel={group.emptyLabel}
+          />
+        ))}
       </div>
     </section>
   );

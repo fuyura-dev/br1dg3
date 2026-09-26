@@ -44,94 +44,121 @@ function findLineNumber(html, snippet, tag) {
   return 1;
 }
 
-function buildSdgContextForNode(nodeId, nodesById, links) {
-  const targetNode = nodesById.get(nodeId) || { id: nodeId, tag: "unknown" };
-  const inLinks = links.filter((l) => l.target === nodeId);
-  const outLinks = links.filter((l) => l.source === nodeId);
+function buildSdgContextForNode(nodeId, nodesById, links, rawContext = null) {
+  const targetNode = nodesById.get(nodeId) || { id: nodeId, tag: "unknown", label: `<${nodeId}>` };
+  const ctxNodes = rawContext?.nodes?.length ? rawContext.nodes : [targetNode];
+  const ctxEdges = rawContext?.edges || [
+    ...links.filter((l) => l.source === nodeId || l.target === nodeId),
+  ];
 
-  const parentEdge = inLinks.find((l) => l.relation === "parent_child");
-  const parentNode = parentEdge ? nodesById.get(parentEdge.source) : null;
+  const ctxNodesById = new Map(ctxNodes.map((n) => [n.id, n]));
+  const getNodeLabel = (id) => {
+    const n = ctxNodesById.get(id) || nodesById.get(id);
+    return n?.label || (n?.tag ? `<${n.tag}>` : id);
+  };
+  const getNodeTag = (id) => {
+    const n = ctxNodesById.get(id) || nodesById.get(id);
+    return n?.tag || id;
+  };
 
-  const children = outLinks
-    .filter((l) => l.relation === "parent_child")
-    .map((l) => {
-      const child = nodesById.get(l.target);
-      return { tag: child?.tag || l.target, note: "Direct child element" };
-    });
-
-  const siblings = parentNode
-    ? links
-        .filter((l) => l.source === parentNode.id && l.relation === "parent_child" && l.target !== nodeId)
-        .slice(0, 5)
-        .map((l) => {
-          const sib = nodesById.get(l.target);
-          return { tag: sib?.tag || l.target, note: `Sibling under <${parentNode.tag}>` };
-        })
-    : [];
-
-  const labelRels = [...inLinks, ...outLinks]
-    .filter((l) =>
-      [
-        "label_input",
-        "aria_labelledby",
-        "aria_describedby",
-        "aria_controls",
-        "aria_owns",
-        "aria_errormessage",
-        "id_reference",
-      ].includes(l.relation)
-    )
-    .map((l) => {
-      const otherId = l.source === nodeId ? l.target : l.source;
-      const other = nodesById.get(otherId);
+  const describeEdge = (edge) => {
+    const srcLabel = getNodeLabel(edge.source);
+    const tgtLabel = getNodeLabel(edge.target);
+    const derivedSuffix = edge.derived ? " (derived)" : "";
+    if (edge.source === nodeId) {
       return {
-        tag: other?.tag || otherId,
-        note: `${l.relation} (${l.source === nodeId ? "outgoing" : "incoming"})`,
+        tag: getNodeTag(edge.target),
+        label: tgtLabel,
+        relation: edge.relation,
+        derived: Boolean(edge.derived),
+        note: `${edge.relation}${derivedSuffix} \u2192 ${tgtLabel}`,
       };
-    });
-
-  const headingRels = [...inLinks, ...outLinks]
-    .filter((l) => l.relation === "heading_hierarchy")
-    .map((l) => {
-      const otherId = l.source === nodeId ? l.target : l.source;
-      const other = nodesById.get(otherId);
+    }
+    if (edge.target === nodeId) {
       return {
-        tag: other?.tag || otherId,
-        note: `Heading hierarchy (${otherId})`,
+        tag: getNodeTag(edge.source),
+        label: srcLabel,
+        relation: edge.relation,
+        derived: Boolean(edge.derived),
+        note: `${srcLabel} \u2192 ${edge.relation}${derivedSuffix}`,
       };
-    });
+    }
+    return {
+      tag: getNodeTag(edge.source),
+      label: `${srcLabel} \u2192 ${tgtLabel}`,
+      relation: edge.relation,
+      derived: Boolean(edge.derived),
+      note: `${edge.relation}${derivedSuffix} (ancestor chain)`,
+    };
+  };
 
-  const formRels = [...inLinks, ...outLinks]
-    .filter((l) => ["form_group", "name_group", "landmark_structure"].includes(l.relation))
-    .map((l) => {
-      const otherId = l.source === nodeId ? l.target : l.source;
-      const other = nodesById.get(otherId);
-      return {
-        tag: other?.tag || otherId,
-        note: `${l.relation}`,
-      };
-    });
+  const pickRelations = (relSet) =>
+    ctxEdges.filter((e) => relSet.has(e.relation)).map(describeEdge);
 
-  // Walk parent_child ancestors to build DOM breadcrumb path
-  const domPath = [targetNode.tag];
-  let curr = parentNode;
-  const visited = new Set([nodeId]);
-  while (curr && !visited.has(curr.id)) {
-    visited.add(curr.id);
-    domPath.unshift(curr.tag);
-    const nextParentEdge = links.find((l) => l.target === curr.id && l.relation === "parent_child");
-    curr = nextParentEdge ? nodesById.get(nextParentEdge.source) : null;
-  }
+  const structuralRels = pickRelations(
+    new Set(["parent_child", "nested_container", "parent_context"])
+  );
+  const landmarkAndOutlineRels = pickRelations(
+    new Set(["landmark_structure", "landmark_context", "heading_hierarchy", "heading_context"])
+  );
+  const labelAndRefRels = pickRelations(
+    new Set([
+      "label_input",
+      "aria_labelledby",
+      "aria_describedby",
+      "aria_controls",
+      "aria_owns",
+      "aria_errormessage",
+      "id_reference",
+    ])
+  );
+  const formFocusAndHiddenRels = pickRelations(
+    new Set(["form_group", "name_group", "focus_order", "hidden_context"])
+  );
+
+  const domPath =
+    rawContext?.dom_path?.length > 0
+      ? rawContext.dom_path
+      : [targetNode.label || `<${targetNode.tag}>`];
 
   return {
-    target: { tag: targetNode.tag },
-    parent: parentNode ? { tag: parentNode.tag } : null,
-    children,
-    siblings,
-    labelRelationships: labelRels,
-    headingRelationships: headingRels,
-    formRelationships: formRels,
+    targetId: nodeId,
+    target: {
+      tag: targetNode.tag,
+      label: targetNode.label || `<${targetNode.tag}>`,
+    },
     domPath,
+    nodes: ctxNodes,
+    links: ctxEdges,
+    groups: [
+      {
+        title: "Structural & Container",
+        items: structuralRels,
+        emptyLabel: "No structural container edges in subgraph",
+      },
+      {
+        title: "Landmarks & Heading Outline",
+        items: landmarkAndOutlineRels,
+        emptyLabel: "No landmark or heading outline edges",
+      },
+      {
+        title: "Labels, ARIA & ID References",
+        items: labelAndRefRels,
+        emptyLabel: "No label, ARIA, or ID reference edges",
+      },
+      {
+        title: "Forms, Focus & Visibility",
+        items: formFocusAndHiddenRels,
+        emptyLabel: "No form group, focus order, or hiding ancestor edges",
+      },
+    ],
+    // Legacy compatibility fields
+    parent: structuralRels[0] || null,
+    children: structuralRels.slice(1),
+    siblings: [],
+    labelRelationships: labelAndRefRels,
+    headingRelationships: landmarkAndOutlineRels,
+    formRelationships: formFocusAndHiddenRels,
   };
 }
 
@@ -257,7 +284,12 @@ function buildWorkspaceData(html, graphRes, repairRes = null) {
       status: normalizedStatus,
     });
 
-    newSdgGraph[vId] = buildSdgContextForNode(node.id, nodesById, rawLinks);
+    newSdgGraph[vId] = buildSdgContextForNode(
+      node.id,
+      nodesById,
+      rawLinks,
+      graphRes.contexts?.[node.id] || null
+    );
 
     if (step) {
       const isCascade = step.status === "cascade_resolved";

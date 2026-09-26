@@ -51,6 +51,26 @@ class SDGBuilder:
             self._mark_violations()
 
 
+    @staticmethod
+    def _format_display_label(tag: Tag) -> str:
+        name = tag.name or "unknown"
+        el_id = tag.get("id")
+        if isinstance(el_id, str) and el_id.strip():
+            return f"<{name}#{el_id.strip()}>"
+
+        for attr in ("role", "for", "name"):
+            val = tag.get(attr)
+            if isinstance(val, str) and val.strip():
+                return f"<{name}[{attr}={val.strip()}]>"
+
+        classes = tag.get("class")
+        if isinstance(classes, list) and classes:
+            clean = [c.strip() for c in classes if isinstance(c, str) and c.strip()][:2]
+            if clean:
+                return f"<{name}.{'.'.join(clean)}>"
+
+        return f"<{name}>"
+
     def _build_nodes(self):
         for index, tag in enumerate(self.soup.find_all(True)):
 
@@ -58,7 +78,7 @@ class SDGBuilder:
 
             self.element_to_id[tag] = node_id
 
-            display_label = f"<{tag.name}>"
+            display_label = self._format_display_label(tag)
 
             self.graph.add_node(
                 node_id,

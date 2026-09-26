@@ -157,16 +157,27 @@ class ContextExtractor:
             if anchor:
                 ctx.add_edge(anchor, target, key=name, relation=name, derived=True)
 
-        # Set target
+        # Set target & DOM path
         for node in ctx.nodes:
             ctx.nodes[node]["is_target"] = node == target
         ctx.graph["target"] = target
+
+        dom_chain = []
+        el = self.ids.element(target)
+        for ancestor in reversed(list(el.parents)):
+            if ancestor in self.ids:
+                anc_id = self.ids[ancestor]
+                dom_chain.append(self.g.nodes[anc_id].get("label") or f"<{ancestor.name}>")
+        dom_chain.append(self.g.nodes[target].get("label") or f"<{el.name}>")
+        ctx.graph["dom_path"] = dom_chain
 
         return ctx
 
 
 def context_to_dict(ctx):
     return {
+        "target": ctx.graph.get("target"),
+        "dom_path": ctx.graph.get("dom_path", []),
         "nodes": [
             {
                 "id": n,
@@ -183,7 +194,7 @@ def context_to_dict(ctx):
                 "source": u,
                 "target": v,
                 "relation": d.get("relation"),
-                "derived": d.get("derived", False)
+                "derived": d.get("derived", False),
             }
             for u, v, d in ctx.edges(data=True)
         ],
