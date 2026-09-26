@@ -3,9 +3,19 @@
   "name": "BR1DG3",
   "version": "1.0",
   "description": "Automatic accessibility repair extension.",
+  "icons": {
+    "16": "assets/icon.png",
+    "48": "assets/icon.png",
+    "128": "assets/icon.png"
+  },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Open BR1DG3"
+    "default_title": "Open BR1DG3",
+    "default_icon": {
+      "16": "assets/icon.png",
+      "48": "assets/icon.png",
+      "128": "assets/icon.png"
+    }
   },
   "permissions": [
     "activeTab",
