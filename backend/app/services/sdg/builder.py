@@ -1,6 +1,7 @@
 import networkx as nx
 from bs4 import BeautifulSoup, Tag
 
+from app.services.detection.preprocess import preprocess
 from app.services.sdg.extractors.aria import extract_aria_edges
 from app.services.sdg.extractors.focus import extract_focus_edges
 from app.services.sdg.extractors.forms import extract_form_group_edges
@@ -38,9 +39,9 @@ class ElementIds:
 
 class SDGBuilder:
     def __init__(self, html: str, violations: list[dict] | None = None):
-        self.html = html
+        self.html = preprocess(html)
         self.violations = violations or []
-        self.soup = BeautifulSoup(html, "html.parser")
+        self.soup = BeautifulSoup(self.html, "html.parser")
         self.graph = nx.MultiDiGraph()
 
         self.element_to_id = ElementIds()

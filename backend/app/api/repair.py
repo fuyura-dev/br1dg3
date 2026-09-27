@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.services.detection.detect import detect
+from app.services.detection.preprocess import preprocess
 from app.services.repair.runner import run_baseline, run_sdg
 from app.services.validation.evaluator import evaluate_repair
 
@@ -62,8 +63,9 @@ def _serialize_steps(run) -> list[dict[str, Any]]:
 
 @router.post("/repair", response_model=RepairResponse)
 def repair_html(request: RepairRequest):
+    clean_html = preprocess(request.html)
     try:
-        violations_before = detect(request.html)
+        violations_before = detect(clean_html)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(
             status_code=503,
@@ -74,13 +76,13 @@ def repair_html(request: RepairRequest):
 
     if not violations_before:
         return RepairResponse(
-            fixed_html=request.html, issues_before=0, issues_after=0, issues_fixed=0,
+            fixed_html=clean_html, issues_before=0, issues_after=0, issues_fixed=0,
             summary="No accessibility issues detected.",
             steps=[],
         )
 
-    run = run_sdg(request.html, violations_before) if request.use_sdg \
-        else run_baseline(request.html, violations_before)
+    run = run_sdg(clean_html, violations_before) if request.use_sdg \
+        else run_baseline(clean_html, violations_before)
 
     try:
         violations_after = detect(run.fixed_html)
@@ -93,7 +95,7 @@ def repair_html(request: RepairRequest):
     issues_after = _count_issues(violations_after)
 
     metrics_report = evaluate_repair(
-        html_original=request.html,
+        html_original=clean_html,
         html_repaired=run.fixed_html,
         violations_before=violations_before,
         violations_after=violations_after,

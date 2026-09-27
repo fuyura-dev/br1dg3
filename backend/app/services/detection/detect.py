@@ -6,6 +6,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 
 from app.config import settings
+from app.services.detection.preprocess import preprocess
 
 options = Options()
 options.add_argument("--disable-gpu")
@@ -107,6 +108,7 @@ def _get_driver():
 
 
 def detect(html: str):
+    html = preprocess(html)
     driver = None
     try:
         driver = _get_driver()

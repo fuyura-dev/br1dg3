@@ -3,6 +3,8 @@ from typing import Any
 
 from bs4 import BeautifulSoup, Tag
 
+from app.services.detection.preprocess import preprocess
+
 
 @dataclass
 class StructureResult:
@@ -54,7 +56,7 @@ def html_to_tree(html: str | None) -> TreeNode | None:
     if not html or not isinstance(html, str) or not html.strip():
         return None
     try:
-        soup = BeautifulSoup(html, "html.parser")
+        soup = BeautifulSoup(preprocess(html), "html.parser")
     except Exception:  # noqa: BLE001
         return None
 

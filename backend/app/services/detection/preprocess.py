@@ -7,7 +7,7 @@ def preprocess(html: str):
     for tag in NON_ESSENTIAL:
         for el in soup.find_all(tag):
             el.extract()
-    return soup.prettify()
+    return str(soup)
 
 if __name__ == '__main__':
     example = '<script>asdsadsadsad</script><head><style>asdsadsad</style></head>'

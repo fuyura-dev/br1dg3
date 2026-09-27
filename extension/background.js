@@ -102,10 +102,14 @@ async function injectRepairedHtml(tabId, html) {
       }
 
       if (newDoc.body && document.body) {
+        const bodyStyles = Array.from(document.body.querySelectorAll('style'));
         for (const attr of Array.from(newDoc.body.attributes)) {
           document.body.setAttribute(attr.name, attr.value);
         }
         document.body.innerHTML = newDoc.body.innerHTML;
+        for (const styleEl of bodyStyles) {
+          document.body.appendChild(styleEl);
+        }
       }
 
       return document.documentElement ? document.documentElement.outerHTML : '';

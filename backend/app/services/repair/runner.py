@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 
+from app.services.detection.preprocess import preprocess
 from app.services.repair.context import ContextExtractor
 from app.services.repair.llm import LLMResult, generate
 from app.services.repair.order import dependency_view, order_violations_by_dependency
@@ -191,6 +192,7 @@ def _step(current, token, table, pending):
 
 def run_sdg(html, violations):
     """html: the document. violations: raw Axe violations (from detect())."""
+    html = preprocess(html)
     builder = SDGBuilder(html, violations)          # the ONLY place Axe selectors are used
     graph = builder.graph
     units = [n for n, d in graph.nodes(data=True) if d["has_issue"]]       # one unit per element
@@ -223,6 +225,7 @@ def run_sdg(html, violations):
 
 def run_baseline(html, violations):
     """Zero-shot baseline: one call, the whole document, all violations at once."""
+    html = preprocess(html)
     if not violations:
         return RepairRun(html, [], 0)
 
