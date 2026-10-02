@@ -14,7 +14,10 @@ def _is_focusable(tag: Tag):
         return False, None
 
     if tag.has_attr("tabindex"):
-        val = int(tag["tabindex"])
+        try:
+            val = int(tag["tabindex"])
+        except (ValueError, TypeError):
+            return False, None
         if val < 0:
             return False, None
 

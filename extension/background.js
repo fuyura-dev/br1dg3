@@ -112,11 +112,51 @@ async function injectRepairedHtml(tabId, html) {
         }
       }
 
-      return document.documentElement ? document.documentElement.outerHTML : '';
+      let soundPlayed = false;
+      try {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (AudioContextClass) {
+          const ctx = new AudioContextClass();
+          const playChime = () => {
+            const now = ctx.currentTime;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+
+            osc.type = 'sine';
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            osc.frequency.setValueAtTime(587.33, now);
+            osc.frequency.setValueAtTime(880.0, now + 0.12);
+
+            gain.gain.setValueAtTime(0, now);
+            gain.gain.linearRampToValueAtTime(0.18, now + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+
+            osc.start(now);
+            osc.stop(now + 0.38);
+            soundPlayed = true;
+          };
+
+          if (ctx.state === 'suspended') {
+            ctx.resume().then(playChime).catch(() => {});
+          } else {
+            playChime();
+          }
+        }
+      } catch (_) {}
+
+      return {
+        html: document.documentElement ? document.documentElement.outerHTML : '',
+        soundPlayed,
+      };
     },
     args: [html],
   });
-  return result || html;
+  return {
+    html: result?.html || html,
+    soundPlayed: Boolean(result?.soundPlayed),
+  };
 }
 
 async function executeRepairInternal(tabId, tabUrl, originalHtml, existingIssues = []) {
@@ -145,7 +185,7 @@ async function executeRepairInternal(tabId, tabUrl, originalHtml, existingIssues
   });
 
   // Inject into the live DOM and capture the resulting outerHTML as repairedHtml
-  const liveRepairedHtml = await injectRepairedHtml(tabId, fixed_html);
+  const { html: liveRepairedHtml, soundPlayed } = await injectRepairedHtml(tabId, fixed_html);
 
   const repairedState = await setTabState(tabId, {
     url: tabUrl,
@@ -157,6 +197,7 @@ async function executeRepairInternal(tabId, tabUrl, originalHtml, existingIssues
     issues_after,
     issues: issues_after === 0 ? [] : existingIssues || [],
     summary,
+    soundPlayed,
   });
 
   return repairedState;

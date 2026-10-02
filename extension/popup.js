@@ -283,6 +283,31 @@
     }
   }
 
+  function playCompletionChime() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.frequency.setValueAtTime(587.33, now);
+      osc.frequency.setValueAtTime(880.0, now + 0.12);
+
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.18, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+
+      osc.start(now);
+      osc.stop(now + 0.4);
+    } catch (_) {}
+  }
+
   async function requestRepair(tab) {
     const prev = await getTabState(tab.id);
     applyTabStateToUi({
@@ -296,6 +321,9 @@
     });
     if (response && response.state) {
       applyTabStateToUi(response.state);
+      if (response.state.status === 'repaired' && !response.state.soundPlayed) {
+        playCompletionChime();
+      }
     }
   }
 
@@ -407,7 +435,12 @@
       }
       const tabKey = getTabStateKey(currentTabId);
       if (changes[tabKey] && changes[tabKey].newValue) {
+        const oldStatus = changes[tabKey].oldValue?.status;
+        const newStatus = changes[tabKey].newValue.status;
         applyTabStateToUi(changes[tabKey].newValue);
+        if (newStatus === 'repaired' && oldStatus === 'repairing' && !changes[tabKey].newValue.soundPlayed) {
+          playCompletionChime();
+        }
       }
     });
 
