@@ -2,58 +2,47 @@
  * Graph Data Parser & Layout Utilities for the Semantic Dependency Graph (SDG).
  *
  * Handles:
- * - Parallel multi-edge consolidation (MultiDiGraph -> combined relation label)
- * - Bidirectional edge curvature so opposite arrows never overlap
+ * - MultiDiGraph edge preservation (each relation has its own edge with unique id)
+ * - Deduplicating identical duplicate edges while preserving multi-relational edges
  * - Filtering isolated non-SDG DOM nodes in Full Document view
  * - True multi-hop ContextSubgraph rendering in Selected Violation view
  */
 
-function consolidateParallelLinks(rawLinks) {
-  const byPair = new Map();
+export function processMultigraphLinks(rawLinks) {
+  const seen = new Set();
+  const edges = [];
 
   for (const link of rawLinks || []) {
     const src = String(link.source?.id ?? link.source);
     const tgt = String(link.target?.id ?? link.target);
     if (!src || !tgt) continue;
 
-    const key = `${src}-->${tgt}`;
-    if (!byPair.has(key)) {
-      byPair.set(key, {
-        source: src,
-        target: tgt,
-        relations: [],
-        derived: Boolean(link.derived),
-      });
-    }
-    const entry = byPair.get(key);
-    if (link.relation && !entry.relations.includes(link.relation)) {
-      entry.relations.push(link.relation);
-    }
-    entry.derived = entry.derived && Boolean(link.derived);
-  }
+    const rel = link.relation || "";
+    const isDerived = Boolean(link.derived);
+    const key = `${src}-->${tgt}::${rel}::${isDerived}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
 
-  const consolidated = [];
-  for (const [key, entry] of byPair.entries()) {
-    const reverseKey = `${entry.target}-->${entry.source}`;
-    const hasReverse = entry.source !== entry.target && byPair.has(reverseKey);
-    consolidated.push({
-      source: entry.source,
-      target: entry.target,
-      relation: entry.relations.join(", "),
-      derived: entry.derived,
-      curvature: hasReverse ? 0.26 : 0,
+    edges.push({
+      id: link.id || `e-${src}-${tgt}-${rel.replace(/[^a-zA-Z0-9_-]/g, "_")}-${edges.length}`,
+      source: src,
+      target: tgt,
+      relation: rel,
+      derived: isDerived,
     });
   }
 
-  return consolidated;
+  return edges;
 }
+
+export const consolidateParallelLinks = processMultigraphLinks;
 
 export function layoutDocumentTree(documentGraph, { showIsolated = false } = {}) {
   if (!documentGraph || !Array.isArray(documentGraph.nodes)) {
     return { nodes: [], links: [], isolatedCount: 0 };
   }
 
-  const links = consolidateParallelLinks(documentGraph.links || []);
+  const links = processMultigraphLinks(documentGraph.links || []);
   const connectedIds = new Set();
   for (const link of links) {
     connectedIds.add(String(link.source));
@@ -88,7 +77,7 @@ export function layoutRadialGraph(context) {
 
   // Preferred path: render the exact multi-hop ContextSubgraph extracted by backend ContextExtractor
   if (Array.isArray(context.nodes) && context.nodes.length > 0) {
-    const links = consolidateParallelLinks(context.links || context.edges || []);
+    const links = processMultigraphLinks(context.links || context.edges || []);
     const nodes = context.nodes.map((n) => {
       const isTarget = Boolean(n.is_target) || n.id === context.targetId;
       return {
@@ -145,7 +134,7 @@ export function layoutRadialGraph(context) {
   pushGroup(context.headingRelationships, "heading");
   pushGroup(context.formRelationships, "form");
 
-  return { nodes, links: consolidateParallelLinks(rawLinks) };
+  return { nodes, links: processMultigraphLinks(rawLinks) };
 }
 
 function formatTag(node) {

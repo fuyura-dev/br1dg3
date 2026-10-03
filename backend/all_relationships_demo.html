@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SDG All Relationships Showcase</title>
+</head>
+<body>
+
+  <!-- 1. ID REFERENCE: Skip link in-page anchor referencing #main-content -->
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <!-- 2. LANDMARK STRUCTURE: header enclosing nav -->
+  <header>
+    <!-- 3. PARENT-CHILD: ul -> li -->
+    <!-- 4. FOCUS ORDER: sequential tab flow across navbar links -->
+    <nav aria-label="Main Navigation">
+      <ul>
+        <li><a href="/home">Home</a></li>
+        <li><a href="/dashboard">Dashboard</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main-content">
+    <!-- 5. HEADING HIERARCHY: h1 -> h2 -> h3 -->
+    <h1>System Settings</h1>
+    <h2>User Profile</h2>
+    <h3>Security &amp; Credentials</h3>
+
+    <!-- 6. FORM & GROUP: form enclosing fieldset, legend, and controls -->
+    <form id="settings-form">
+      <!-- 7. LABEL-INPUT & ARIA REFERENCES: label_input + aria-labelledby + aria-describedby -->
+      <label for="user-email" id="email-label">Work Email</label>
+      <input 
+        type="email" 
+        id="user-email" 
+        list="domain-suggestions"
+        aria-labelledby="email-label" 
+        aria-describedby="email-help"
+      >
+      <span id="email-help">We will never share your email with third parties.</span>
+
+      <!-- ID REFERENCE: input list pointing to datalist -->
+      <datalist id="domain-suggestions">
+        <option value="user@company.com">
+        <option value="user@university.edu">
+      </datalist>
+
+      <!-- FORM GROUP & NAME GROUP: radio buttons sharing name="theme" -->
+      <fieldset>
+        <legend>Theme Preference</legend>
+        <label><input type="radio" name="theme" value="light"> Light Mode</label>
+        <label><input type="radio" name="theme" value="dark"> Dark Mode</label>
+      </fieldset>
+
+      <!-- ARIA CONTROLS: button controlling expandable section -->
+      <button type="button" aria-controls="audit-log">Toggle Audit Log</button>
+      <div id="audit-log" role="region" aria-label="Audit Log">Log records loaded...</div>
+
+      <!-- PARENT-CHILD: select -> optgroup -> option -->
+      <label for="region-select">Select Region</label>
+      <select id="region-select">
+        <optgroup label="North America">
+          <option value="us">United States</option>
+          <option value="ca">Canada</option>
+        </optgroup>
+      </select>
+
+      <button type="submit">Save Settings</button>
+    </form>
+
+    <!-- PARENT-CHILD & ID REFERENCE (headers attribute on table cells) -->
+    <table>
+      <thead>
+        <tr>
+          <th id="hdr-perm">Permission</th>
+          <th id="hdr-lvl">Level</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td headers="hdr-perm">Read Access</td>
+          <td headers="hdr-lvl">Full</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- ACCESSIBILITY VIOLATION (for testing repair in Studio): Missing alt attribute -->
+    <img src="badge.png">
+  </main>
+
+</body>
+</html>

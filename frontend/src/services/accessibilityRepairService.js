@@ -171,55 +171,128 @@ function mapMetricsToCards(metricsDict, issuesBefore, issuesAfter) {
   const efc = metricsDict.efficiency || {};
   const sem = metricsDict.semantic || {};
 
-  const vrScore = Math.max(0, Math.min(100, Math.round(eff.reduction_rate ?? 100)));
-  const safetyScore = saf.is_safe ? 100 : 0;
-  const structScore = Math.max(0, Math.min(100, Math.round((str.structural_similarity ?? 1) * 100)));
-  const cascadeOrAppliedScore =
-    efc.total_steps > 0
-      ? Math.round(((efc.applied_steps + efc.cascade_resolved_steps) / efc.total_steps) * 100)
+  // 1. Repair Effectiveness (CIR, FFR, Reduction Rate)
+  const fallbackReduction =
+    issuesBefore > 0
+      ? Math.round(((issuesBefore - issuesAfter) / issuesBefore) * 100)
       : 100;
-  const semScore = Math.max(0, Math.min(100, Math.round(sem.preservation_rate ?? 100)));
+  const vrScore = Math.max(
+    0,
+    Math.min(100, Math.round(eff.reduction_rate ?? fallbackReduction))
+  );
+  const isFullyFixed = Boolean(eff.fully_fixed ?? (issuesAfter === 0));
+  const isImproved = Boolean(eff.compliance_improved ?? (issuesAfter < issuesBefore));
+  const effectivenessStatus = isFullyFixed
+    ? { label: "Fully Fixed", tone: "success" }
+    : isImproved
+    ? { label: "Improved", tone: "accent" }
+    : { label: "No Change", tone: "warning" };
+
+  const violationsReduced =
+    eff.violations_reduced ?? Math.max(0, issuesBefore - issuesAfter);
+  const totalBefore = eff.violations_before ?? issuesBefore;
+  const totalAfter = eff.violations_after ?? issuesAfter;
+
+  // 2. Repair Safety (Syntactic Validity Si in {0, 1})
+  const isValid = Boolean(saf.is_valid);
+  const safetyScore = isValid ? 100 : 0;
+  const safetyStatus = isValid
+    ? { label: "Syntactically Valid", tone: "success" }
+    : { label: "Syntax Error", tone: "critical" };
+
+  // 3. Structural Preservation (Zhang-Shasha TED, SS_i >= 0.85)
+  const sim = str.structure_similarity ?? 1;
+  const structScore = Math.max(0, Math.min(100, Math.round(sim * 100)));
+  const isPreserved = Boolean(
+    str.structure_preserved ?? sim >= (str.threshold ?? 0.85)
+  );
+  const structStatus = isPreserved
+    ? { label: "Preserved (≥0.85)", tone: "success" }
+    : { label: "Altered (<0.85)", tone: "warning" };
+
+  // 4. Repair Efficiency (Resource metrics: TAC, TT, TC, Cascaded)
+  const apiCalls = efc.api_calls ?? 0;
+  const totalTokens = efc.total_tokens ?? 0;
+  const costUsd = efc.cost_usd ?? 0;
+  const cascadedCount = efc.cascaded_count ?? 0;
+  const totalElements = efc.total_elements ?? 0;
+  const cascadeRate = efc.cascade_rate ?? 0;
+
+  const efficiencyStatus =
+    cascadedCount > 0
+      ? { label: `${cascadedCount} Cascaded`, tone: "accent" }
+      : { label: "Completed", tone: "accent" };
+
+  // 5. Semantic Dependency Preservation (SDP_i)
+  const hasDeps = Boolean(sem.has_dependencies);
+  const semRate = sem.preservation_rate ?? 100;
+  const semScore = Math.max(0, Math.min(100, Math.round(semRate)));
+  const brokenCount = sem.broken_count ?? 0;
+  const validDeps = sem.dependencies_valid ?? 0;
+  const totalDeps = sem.dependencies_before ?? 0;
+
+  let semanticStatus;
+  if (!hasDeps) {
+    semanticStatus = { label: "N/A (No Dependencies)", tone: "accent" };
+  } else if (semRate === 100) {
+    semanticStatus = { label: "100% Intact", tone: "success" };
+  } else if (semRate >= 80) {
+    semanticStatus = { label: "Mostly Intact", tone: "accent" };
+  } else {
+    semanticStatus = { label: `${brokenCount} Broken`, tone: "warning" };
+  }
 
   return [
     {
       id: "effectiveness",
       label: "Repair Effectiveness",
       score: vrScore,
-      detail: `${eff.violations_resolved ?? issuesBefore - issuesAfter} of ${
-        eff.violations_before ?? issuesBefore
-      } violations resolved (${issuesAfter} remaining)`,
+      status: effectivenessStatus,
+      detail: `${violationsReduced} of ${totalBefore} violations reduced (${totalAfter} remaining)`,
     },
     {
       id: "safety",
       label: "Repair Safety",
       score: safetyScore,
-      detail: saf.is_safe
-        ? "Syntactically valid HTML with no truncation or malformed tags"
-        : `Safety failed: ${saf.failure_reason || "malformed output"}`,
+      displayValue: isValid ? "Valid" : "Invalid",
+      status: safetyStatus,
+      detail: isValid
+        ? `Parsed cleanly (${saf.element_count ?? "DOM"} elements, 0 syntax errors)`
+        : `Safety failed: ${saf.reason || "malformed HTML output"}`,
     },
     {
       id: "structural",
       label: "Structural Preservation",
       score: structScore,
-      detail: `Tree similarity ${(str.structural_similarity ?? 1).toFixed(3)} (TED = ${
-        str.tree_edit_distance ?? 0
-      }, N = ${str.max_tree_size ?? 0})`,
+      displayValue: sim.toFixed(3),
+      status: structStatus,
+      detail: `TED = ${str.tree_edit_distance ?? 0} edits on max ${
+        str.max_nodes ?? 0
+      } DOM nodes (Threshold θ = ${str.threshold ?? 0.85})`,
     },
     {
       id: "efficiency",
       label: "Repair Efficiency",
-      score: cascadeOrAppliedScore,
-      detail: `${efc.api_calls ?? 0} API calls, ${efc.cascade_resolved_steps ?? 0} cascaded, ${
-        efc.total_tokens ?? 0
-      } tokens`,
+      showBar: false,
+      displayValue: `${apiCalls} API Call${apiCalls === 1 ? "" : "s"}`,
+      status: efficiencyStatus,
+      stats: [
+        { value: `${apiCalls}`, label: "calls" },
+        { value: totalTokens.toLocaleString(), label: "tokens" },
+        { value: `$${costUsd.toFixed(5)}`, label: "USD" },
+      ],
+      detail: `${totalTokens.toLocaleString()} tokens ($${costUsd.toFixed(
+        5
+      )} USD) · ${cascadedCount} of ${totalElements} skipped via cascade (${cascadeRate}%)`,
     },
     {
       id: "semantic",
       label: "Semantic Dependency Preservation",
       score: semScore,
-      detail: `${sem.dependencies_valid ?? 0} of ${
-        sem.dependencies_before ?? 0
-      } SDG relationships preserved`,
+      status: semanticStatus,
+      detail: hasDeps
+        ? `${validDeps} of ${totalDeps} relationships intact (${brokenCount} broken)`
+        : "No semantic relationships present in document",
     },
   ];
 }

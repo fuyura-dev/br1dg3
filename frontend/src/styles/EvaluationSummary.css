@@ -82,6 +82,28 @@
   border-radius: 999px;
 }
 
+.evaluation-metric__stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.evaluation-metric__stat-badge {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg);
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+.evaluation-metric__stat-badge strong {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
 .evaluation-metric__detail {
   font-size: 11.5px;
   color: var(--color-text-secondary);
