@@ -1,11 +1,10 @@
 .html-editor-wrapper {
+  background: transparent;
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
   max-height: 100%;
-  border: 1px solid #333;
-  border-radius: 6px;
   overflow: hidden;
 }
 
@@ -15,15 +14,16 @@
   align-items: center;
   flex-shrink: 0;
   padding: 12px 16px;
-  background-color: #1e1e1e;
-  border-bottom: 1px solid #333;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .editor-header h3 {
   margin: 0;
-  color: #fff;
-  font-size: 1rem;
-  font-weight: 500;
+  color: var(--color-text-primary);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .editor-actions {
@@ -34,37 +34,43 @@
 
 .run-scan-button,
 .run-repair-button {
-  color: white;
   border: none;
   padding: 8px 14px;
-  border-radius: 4px;
+  border-radius: 2px;
   cursor: pointer;
-  font-weight: 600;
+  font-weight: 700;
   font-size: 13px;
-  transition: background-color 0.2s;
+  transition: all 0.15s ease-in-out;
 }
 
 .run-scan-button {
-  background-color: #007bff;
+  background-color: var(--color-accent);
+  color: var(--color-text-on-accent);
 }
 
 .run-scan-button:hover:not(:disabled) {
-  background-color: #0056b3;
+  background-color: var(--color-accent-hover);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+  transform: translateY(-1px);
 }
 
 .run-repair-button {
-  background-color: #10b981;
+  background-color: var(--color-success);
+  color: white;
 }
 
 .run-repair-button:hover:not(:disabled) {
-  background-color: #059669;
+  filter: brightness(0.9);
+  transform: translateY(-1px);
 }
 
 .run-scan-button:disabled,
 .run-repair-button:disabled {
-  background-color: #444;
-  color: #888;
+  background-color: rgba(135, 147, 168, 0.3);
+  color: var(--color-text-tertiary);
   cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
 }
 
 .editor-container {
@@ -73,4 +79,5 @@
   width: 100%;
   position: relative;
   overflow: hidden;
+  background: var(--color-code-bg);
 }

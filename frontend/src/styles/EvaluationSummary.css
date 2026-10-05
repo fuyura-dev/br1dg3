@@ -1,88 +1,111 @@
 .evaluation-summary {
+  display: flex;
+  flex-direction: column;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-panel);
-  padding: 16px;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+  padding: 24px;
 }
 
 .evaluation-summary__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
 }
 
+/* ------------------------------------------------------------------ */
+/* Premium Dashboard Metric Widget                                    */
+/* ------------------------------------------------------------------ */
 .evaluation-metric {
+  flex: 1;
+  min-width: 140px;
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 12px;
+  border-radius: var(--radius-md);
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.evaluation-metric:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
 }
 
 .evaluation-metric__top {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .evaluation-metric__dot {
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--metric-accent);
-  flex-shrink: 0;
+  background-color: var(--metric-accent);
 }
 
 .evaluation-metric__status {
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.evaluation-metric__status--success {
-  color: var(--color-success);
-}
-
-.evaluation-metric__status--accent {
-  color: var(--color-accent);
-}
-
-.evaluation-metric__status--warning {
-  color: var(--color-warning);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .evaluation-metric__status--critical {
   color: var(--color-critical);
 }
 
+.evaluation-metric__status--warning {
+  color: var(--color-moderate);
+}
+
+.evaluation-metric__status--good {
+  color: var(--color-success);
+}
+
+.evaluation-metric__status--perfect {
+  color: var(--color-accent);
+}
+
 .evaluation-metric__label {
-  font-size: 12.5px;
+  font-size: 15px;
   font-weight: 600;
-  color: var(--color-text-primary);
-  min-height: 32px;
+  color: var(--color-text-secondary);
+  margin: 0;
 }
 
 .evaluation-metric__score {
-  font-size: 26px;
-  font-weight: 700;
+  font-size: 32px;
+  font-weight: 800;
   color: var(--color-text-primary);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  margin: 4px 0;
 }
 
 .evaluation-metric__bar {
+  width: 100%;
   height: 6px;
+  background: var(--color-surface-sunken);
   border-radius: 999px;
-  background: var(--color-bg);
   overflow: hidden;
+  margin-top: auto;
 }
 
 .evaluation-metric__bar-fill {
   height: 100%;
   background: var(--metric-accent);
   border-radius: 999px;
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .evaluation-metric__detail {
-  font-size: 11.5px;
-  color: var(--color-text-secondary);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  margin-top: 4px;
 }

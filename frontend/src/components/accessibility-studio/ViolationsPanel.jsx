@@ -9,7 +9,7 @@ function ViolationsPanel({ violations, selectedId, onSelect }) {
         <span className="panel-header__count">{violations.length} found</span>
       </header>
       {violations.length === 0 ? (
-        <p style={{ color: "var(--color-text-tertiary)", fontSize: "13px", margin: 0 }}>
+        <p className="violations-panel__empty">
           No violations loaded. Enter HTML in the editor and click Run Scan.
         </p>
       ) : (
