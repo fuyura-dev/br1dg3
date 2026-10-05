@@ -69,7 +69,7 @@ export function getRelationLabel(relation) {
   return RELATION_CONFIG[relation]?.label || relation.replace(/_/g, " ");
 }
 
-function SdgCytoscapeCanvas({
+const SdgCytoscapeCanvas = React.memo(function SdgCytoscapeCanvas({
   graphData,
   graphRef,
   onNodeClick,
@@ -476,7 +476,7 @@ function SdgCytoscapeCanvas({
       )}
     </div>
   );
-}
+});
 
 function SdgGraphModal({
   violation,
@@ -801,4 +801,4 @@ function SdgGraphModal({
   );
 }
 
-export default SdgGraphModal;
+export default React.memo(SdgGraphModal);

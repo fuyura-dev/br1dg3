@@ -94,12 +94,13 @@ def generate(prompt) -> LLMResult:
     thought_tokens = _get(usage, "total_thought_tokens", 0) or 0
     total_tokens = _get(usage, "total_tokens", 0) or (prompt_tokens + completion_tokens + thought_tokens)
 
-    print(
+    from app.services.repair.log_streamer import streamer
+    streamer.log(
         f"[LLM] Status: {status} | Latency: {round(latency, 2)}s | "
         f"Input: {prompt_tokens} | Output: {completion_tokens} | Thought: {thought_tokens} | Total: {total_tokens} tokens"
     )
     if not thought_tokens and not prompt_tokens:
-        print(f"[LLM] Raw usage object from API: {usage}")
+        streamer.log(f"[LLM] Raw usage object from API: {usage}")
 
     return LLMResult(
         text=text,

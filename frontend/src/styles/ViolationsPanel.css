@@ -37,6 +37,17 @@
 /* ------------------------------------------------------------------ */
 /* Premium Violation Cards                                             */
 /* ------------------------------------------------------------------ */
+@keyframes slideFadeInRight {
+  0% {
+    opacity: 0;
+    transform: translateX(-15px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 .violation-card {
   width: 100%;
   text-align: left;
@@ -50,8 +61,19 @@
   box-shadow: none;
   transition: all 0.2s ease-in-out;
   padding: 0;
-  /* padding is inside content */
+  animation: slideFadeInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
 }
+
+.violations-panel__list li:nth-child(1) .violation-card { animation-delay: 0.00s; }
+.violations-panel__list li:nth-child(2) .violation-card { animation-delay: 0.05s; }
+.violations-panel__list li:nth-child(3) .violation-card { animation-delay: 0.10s; }
+.violations-panel__list li:nth-child(4) .violation-card { animation-delay: 0.15s; }
+.violations-panel__list li:nth-child(5) .violation-card { animation-delay: 0.20s; }
+.violations-panel__list li:nth-child(6) .violation-card { animation-delay: 0.25s; }
+.violations-panel__list li:nth-child(7) .violation-card { animation-delay: 0.30s; }
+.violations-panel__list li:nth-child(8) .violation-card { animation-delay: 0.35s; }
+.violations-panel__list li:nth-child(n+9) .violation-card { animation-delay: 0.40s; }
 
 .violation-card:hover {
   transform: none;
@@ -176,7 +198,8 @@
 .violation-card__line {
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-text-secondary);
+  color: var(--color-code-text);
+  opacity: 0.6;
   white-space: nowrap;
 }
 

@@ -1,7 +1,10 @@
+import React from 'react';
 import EvaluationMetric from "./EvaluationMetric.jsx";
 import '../../styles/EvaluationSummary.css';
 
 function EvaluationSummary({ metrics }) {
+  if (!metrics || metrics.length === 0) return null;
+
   return (
     <section className="evaluation-summary" aria-label="Validation and evaluation summary">
       <header className="panel-header">
@@ -16,4 +19,4 @@ function EvaluationSummary({ metrics }) {
   );
 }
 
-export default EvaluationSummary;
+export default React.memo(EvaluationSummary);

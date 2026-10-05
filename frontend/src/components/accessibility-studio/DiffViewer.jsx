@@ -80,6 +80,15 @@ function DiffViewer({ original, repaired }) {
         </div>
       )}
 
+      {displayOriginal === displayRepaired && (
+        <div style={{ padding: '12px 16px', background: 'rgba(16, 185, 129, 0.1)', borderBottom: '1px solid rgba(16, 185, 129, 0.2)', color: '#10b981', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          No accessibility changes were necessary. The HTML structure remains identical.
+        </div>
+      )}
+
       <div className="diff-viewer__container">
         <DiffEditor
           height="500px"
@@ -106,4 +115,4 @@ function DiffViewer({ original, repaired }) {
   );
 }
 
-export default DiffViewer;
+export default React.memo(DiffViewer);
