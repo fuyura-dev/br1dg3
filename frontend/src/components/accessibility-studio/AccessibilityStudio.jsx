@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAccessibilityStudio } from "../../hooks/useAccessibilityStudio.js";
 
 import HtmlEditor from "./HtmlEditor.jsx";
@@ -12,6 +13,7 @@ import EvaluationSummary from "./EvaluationSummary.jsx";
 import '../../styles/AccessibilityStudio.css';
 
 function AccessibilityStudio() {
+  const navigate = useNavigate();
   const {
     status,
     errorMessage,
@@ -31,9 +33,24 @@ function AccessibilityStudio() {
   const [isGraphOpen, setGraphOpen] = useState(false);
 
   return (
-    <div className="accessibility-studio">
-      <header className="accessibility-studio__header">
-        <h1>BR1DG3 — Accessibility Repair Studio</h1>
+    <div className="studio-page-wrapper">
+      <div className="accessibility-studio">
+      <header className="accessibility-studio__header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <img className="br1dg3-logo" src="/BR1DG3 - Logo.png" alt="BR1DG3 Logo" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
+          <h1 style={{ margin: 0 }}>BR1DG3 — Accessibility Repair Studio</h1>
+        </div>
+        
+        <button 
+          className="accessibility-studio__back-btn"
+          onClick={() => navigate('/')}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+          Back to Landing
+        </button>
       </header>
 
       {errorMessage && (
@@ -72,13 +89,11 @@ function AccessibilityStudio() {
 
       <RepairSummary violation={selectedViolation} repair={repair} />
 
-      {/* Side-by-side comparison of the original and repaired HTML */}
       <DiffViewer 
         original={htmlSource} 
         repaired={repairedHtml} 
       />
 
-      {/* SDG Graph Visualizer Modal */}
       {isGraphOpen && (
         <SdgGraphModal
           violation={selectedViolation}
@@ -90,6 +105,7 @@ function AccessibilityStudio() {
         />
       )}
 
+      </div>
     </div>
   );
 }

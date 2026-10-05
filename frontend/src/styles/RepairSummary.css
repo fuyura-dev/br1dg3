@@ -1,33 +1,64 @@
 .repair-summary {
+  display: flex;
+  flex-direction: column;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-panel);
-  padding: 16px;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+  padding: 24px;
 }
 
 .repair-summary__empty {
   color: var(--color-text-tertiary);
-  font-size: 13px;
+  font-size: 15px;
+  font-style: italic;
+  text-align: center;
+  padding: 40px 20px;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--color-border-strong);
 }
 
 .repair-summary__grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 14px 20px;
+  gap: 20px;
+  margin: 0;
+}
+
+.repair-summary__grid>div {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  box-shadow: var(--shadow-sm);
 }
 
 .repair-summary__grid dt {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   color: var(--color-text-tertiary);
-  margin-bottom: 3px;
+  margin-bottom: 8px;
 }
 
 .repair-summary__grid dd {
-  font-size: 13px;
+  font-size: 15px;
   color: var(--color-text-primary);
+  font-weight: 500;
   margin: 0;
+}
+
+.repair-summary__grid code {
+  color: var(--color-accent-hover);
+  background: var(--color-surface-sunken);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 14px;
+  border: 1px solid rgba(37, 99, 235, 0.1);
+  display: inline-block;
+  word-break: break-all;
 }
 
 .repair-summary__reason {
@@ -35,15 +66,16 @@
 }
 
 .repair-summary__relationships {
-  margin-top: 14px;
-  padding-top: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
   border-top: 1px solid var(--color-border);
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
-  font-size: 11.5px;
-  color: var(--color-text-tertiary);
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
 }
 
 .repair-summary__relationships ul {
@@ -53,19 +85,16 @@
 }
 
 .repair-summary__relationships code {
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
-  padding: 2px 6px;
+  padding: 4px 10px;
   color: var(--color-accent);
+  box-shadow: var(--shadow-sm);
 }
 
 @media (max-width: 760px) {
   .repair-summary__grid {
     grid-template-columns: 1fr;
-  }
-
-  .repair-summary__reason {
-    grid-column: auto;
   }
 }
