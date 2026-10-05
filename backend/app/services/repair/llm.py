@@ -7,7 +7,7 @@ from google import genai
 client = genai.Client(api_key=settings.LLM_API_KEY)
 
 GENERATION_CONFIG: dict = {
-    "thinking_level": "medium",             # minimal | low | medium | high
+    "thinking_level": "minimal",             # minimal | low | medium | high
     # "seed": 42,
     # "max_output_tokens": 8192,
 }
