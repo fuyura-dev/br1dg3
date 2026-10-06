@@ -24,23 +24,31 @@ async function postJson(endpoint, payload) {
   return response.json();
 }
 
-function findLineNumber(html, snippet, tag) {
+function findLineNumber(html, snippet, tag, occurrence = 1) {
   if (!html) return 1;
+  
+  let searchStr = "";
   if (snippet) {
-    const openTag = snippet.split(">")[0];
-    if (openTag) {
-      const idx = html.indexOf(openTag);
-      if (idx !== -1) {
-        return html.slice(0, idx).split("\n").length;
-      }
+    searchStr = snippet.split(">")[0];
+  } else if (tag) {
+    searchStr = `<${tag.toLowerCase()}`;
+  }
+  
+  if (!searchStr) return 1;
+  
+  let idx = -1;
+  for (let i = 0; i < occurrence; i++) {
+    idx = html.toLowerCase().indexOf(searchStr.toLowerCase(), idx + 1);
+    if (idx === -1) {
+      // If we can't find the Nth occurrence, fallback to the last found index or 0
+      break;
     }
   }
-  if (tag) {
-    const idx = html.toLowerCase().indexOf(`<${tag.toLowerCase()}`);
-    if (idx !== -1) {
-      return html.slice(0, idx).split("\n").length;
-    }
+  
+  if (idx !== -1) {
+    return html.slice(0, idx).split("\n").length;
   }
+  
   return 1;
 }
 
@@ -318,9 +326,16 @@ function buildWorkspaceData(html, graphRes, repairRes = null) {
   const newSdgGraph = {};
   const newRepairs = {};
   const nodeViolationMap = new Map();
+  const occurrenceMap = new Map();
 
   let vIndex = 1;
   for (const node of rawNodes) {
+    // Track the occurrence of the raw tag across ALL elements (healthy or not)
+    // so we maintain exact sync with the raw HTML string's document order.
+    const tagSearchStr = `<${node.tag.toLowerCase()}`;
+    const tagOccurrence = (occurrenceMap.get(tagSearchStr) || 0) + 1;
+    occurrenceMap.set(tagSearchStr, tagOccurrence);
+
     if (!node.has_issue || !node.issues?.length) continue;
 
     const vId = `V${String(vIndex).padStart(3, "0")}`;
@@ -350,7 +365,8 @@ function buildWorkspaceData(html, graphRes, repairRes = null) {
       severity: impact,
       target: `<${node.tag}> (${node.id})`,
       element: `<${node.tag}>`,
-      line: findLineNumber(html, snippet, node.tag),
+      // Always use the exact tag occurrence for reliable line matching
+      line: findLineNumber(html, null, node.tag, tagOccurrence),
       html: snippet,
       description: node.issues.map((i) => i.help || i.description || i.id).join("; "),
       failureSummary: primaryIssue.description || primaryIssue.help || "",

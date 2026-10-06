@@ -78,8 +78,14 @@ function SdgContextPanel({ violation, context, onOpenGraph }) {
       <header className="panel-header">
         <h2>SDG Context</h2>
         <div className="sdg-panel__header-actions">
-          <span className="panel-header__count">{violation.id}</span>
-          <button type="button" className="sdg-panel__graph-btn" onClick={onOpenGraph}>
+          <span className={`panel-header__count panel-header__count--${violation.impact?.toLowerCase() || 'moderate'}`}>
+            {violation.id}
+          </span>
+          <button 
+            type="button" 
+            className="sdg-panel__graph-btn" 
+            onClick={onOpenGraph}
+          >
             View SDG Graph
           </button>
         </div>

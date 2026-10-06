@@ -81,3 +81,15 @@
   overflow: hidden;
   background: var(--color-code-bg);
 }
+
+.monaco-highlight-critical { background-color: rgba(239, 68, 68, 0.25) !important; }
+.monaco-highlight-critical-margin { border-left: 4px solid #ef4444 !important; }
+
+.monaco-highlight-serious { background-color: rgba(249, 115, 22, 0.25) !important; }
+.monaco-highlight-serious-margin { border-left: 4px solid #f97316 !important; }
+
+.monaco-highlight-moderate { background-color: rgba(234, 179, 8, 0.25) !important; }
+.monaco-highlight-moderate-margin { border-left: 4px solid #eab308 !important; }
+
+.monaco-highlight-minor { background-color: rgba(59, 130, 246, 0.25) !important; }
+.monaco-highlight-minor-margin { border-left: 4px solid #3b82f6 !important; }
