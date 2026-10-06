@@ -1,3 +1,4 @@
+import React from 'react';
 import { formatNodeLabel } from "../../utils/format.js";
 import "../../styles/SdgContextPanel.css";
 
@@ -116,4 +117,4 @@ function SdgContextPanel({ violation, context, onOpenGraph }) {
   );
 }
 
-export default SdgContextPanel;
+export default React.memo(SdgContextPanel);

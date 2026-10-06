@@ -1,3 +1,4 @@
+import React from 'react';
 import ViolationItem from "./ViolationItem.jsx";
 import '../../styles/ViolationsPanel.css';
 
@@ -28,4 +29,4 @@ function ViolationsPanel({ violations, selectedId, onSelect }) {
   );
 }
 
-export default ViolationsPanel;
+export default React.memo(ViolationsPanel);

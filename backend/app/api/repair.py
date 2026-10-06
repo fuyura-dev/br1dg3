@@ -1,14 +1,20 @@
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.services.detection.detect import detect
 from app.services.detection.preprocess import preprocess
 from app.services.repair.runner import run_baseline, run_sdg
 from app.services.validation.evaluator import evaluate_repair
+from app.services.repair.log_streamer import streamer
 
 router = APIRouter()
+
+@router.get("/repair/logs")
+async def repair_logs():
+    return StreamingResponse(streamer.subscribe(), media_type="text/event-stream")
 
 class RepairRequest(BaseModel):
     html: str

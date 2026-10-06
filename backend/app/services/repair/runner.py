@@ -13,6 +13,7 @@ from app.services.repair.patch import (
 )
 from app.services.repair.prompt import build_baseline_prompt, build_sdg_prompt
 from app.services.sdg.builder import SDGBuilder
+from app.services.repair.log_streamer import streamer
 
 
 @dataclass
@@ -140,7 +141,7 @@ def _step(current, token, table, pending):
     # Cascade resolution check
     satisfactions = {r: _is_already_satisfied(target, r) for r in rules}
     if all(satisfactions.values()):
-        print(f"[CASCADE RESOLVED {token}] <{target.name}> | Rules: {rules}")
+        streamer.log(f"[CASCADE RESOLVED {token}] <{target.name}> | Rules: {rules}")
         return Step(token, target.name, rules, "cascade_resolved", node_id=node_id), current
 
     # If some (but not all) rules were already resolved by ancestors, filter them out
@@ -151,7 +152,7 @@ def _step(current, token, table, pending):
         rules = [issue["id"] for issue in active_issues]
 
     parent_names = [getattr(p, "name", "") for p in target.parents if getattr(p, "name", None)]
-    print(f"[NOT CASCADED {token}] <{target.name}> | Rules: {rules} | Satisfied: {satisfactions} | Parents: {parent_names[:4]}")
+    streamer.log(f"[NOT CASCADED {token}] <{target.name}> | Rules: {rules} | Satisfied: {satisfactions} | Parents: {parent_names[:4]}")
 
     step = Step(token, target.name, rules, "", node_id=node_id)
 
@@ -161,7 +162,7 @@ def _step(current, token, table, pending):
         for u, v, d in ctx.edges(data=True)
     ]
     sdg_prompt = build_sdg_prompt(ctx, builder.element_to_id)
-    print(
+    streamer.log(
         f"[STEP {token}] Target: <{target.name}> | Rules: {rules} | "
         f"Prompt Size: {len(sdg_prompt.user) + len(sdg_prompt.system)} chars (~{(len(sdg_prompt.user) + len(sdg_prompt.system)) // 4} est tokens)"
     )
@@ -170,23 +171,23 @@ def _step(current, token, table, pending):
         step.llm = generate(sdg_prompt)
     except Exception as exc:                                               # noqa: BLE001
         step.status, step.error = "llm_error", f"{type(exc).__name__}: {exc}"
-        print(f"[STEP {token}] LLM Error: {step.error}")
+        streamer.log(f"[STEP {token}] LLM Error: {step.error}")
         return step, current
     if not step.llm.ok:                                                    # truncated / failed / empty
         step.status = f"llm_not_ok:{step.llm.status}"
-        print(f"[STEP {token}] LLM Not OK: status={step.llm.status}")
+        streamer.log(f"[STEP {token}] LLM Not OK: status={step.llm.status}")
         return step, current
 
-    print(f"[STEP {token}] LLM Reply ({len(step.llm.text)} chars):\n{step.llm.text.strip()}")
+    streamer.log(f"[STEP {token}] LLM Reply ({len(step.llm.text)} chars):\n{step.llm.text.strip()}")
     patch = apply_reply(target, step.llm.text, token)                      # mutates builder.soup
     step.status, step.warnings = patch.status, patch.warnings
 
-    print(
+    streamer.log(
         f"[STEP {token}] Applied: status={step.status} warnings={step.warnings} | "
         f"Tokens -> In: {step.llm.prompt_tokens}, Out: {step.llm.completion_tokens}, "
         f"Thought: {step.llm.thought_tokens}, Total: {step.llm.total_tokens}"
     )
-    print("-" * 50)
+    streamer.log("-" * 50)
     return step, (outer_html(builder.soup) if patch.applied else current)
 
 
