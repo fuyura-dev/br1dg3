@@ -40,6 +40,7 @@
 
   function queryElements() {
     return {
+      studioBtn: document.getElementById('open-studio-btn'),
       autoRepairToggle: document.querySelector('.switch input'),
       statusBadge: document.querySelector('.status-badge'),
       statusMessage: document.getElementById('status-message'),
@@ -105,12 +106,14 @@
       if (elements.viewSummaryBtn) elements.viewSummaryBtn.disabled = true;
       if (elements.restoreBtn) elements.restoreBtn.disabled = true;
       if (elements.autoRepairToggle) elements.autoRepairToggle.disabled = true;
+      if (elements.studioBtn) elements.studioBtn.disabled = true;
     } else {
       if (elements.repairBtn) elements.repairBtn.disabled = !canRepair;
       if (elements.rescanBtn) elements.rescanBtn.disabled = false;
       if (elements.viewSummaryBtn) elements.viewSummaryBtn.disabled = false;
       if (elements.restoreBtn) elements.restoreBtn.disabled = false;
       if (elements.autoRepairToggle) elements.autoRepairToggle.disabled = false;
+      if (elements.studioBtn) elements.studioBtn.disabled = false;
     }
   }
 
@@ -414,6 +417,36 @@
     }
   }
 
+  function getTabStateKey(tabId) {
+    return `tabState_${tabId}`;
+  }
+
+  async function getTabState(tabId) {
+    const key = getTabStateKey(tabId);
+    const data = await chrome.storage.local.get(key);
+    return data[key] || null;
+  }
+
+  async function getTabOriginalHtml(tabId) {
+    const tabState = await getTabState(tabId);
+    return tabState.originalHtml;
+  }
+
+  async function handleOpenStudio() {
+    function base64Encode(text) {
+      const bytes = new TextEncoder().encode(text);
+      const binString = String.fromCodePoint(...bytes);
+      return btoa(binString);
+    }
+
+    const html = await getTabOriginalHtml(currentTabId);
+    const encodedHtml = base64Encode(html);
+
+    const url = `http://127.0.0.1:5173/studio?html=${encodeURIComponent(encodedHtml)}`;
+
+    window.open(url, '_blank', 'noopener');
+  }
+
   async function initializePopup() {
     const autoRepair = await getAutoRepairSetting();
     if (elements.autoRepairToggle) {
@@ -475,6 +508,10 @@
     }
     if (elements.autoRepairToggle) {
       elements.autoRepairToggle.addEventListener('change', handleAutoRepairToggle);
+    }
+
+    if (elements.studioBtn) {
+      elements.studioBtn.addEventListener('click', handleOpenStudio);
     }
 
     initializePopup();
