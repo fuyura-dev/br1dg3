@@ -5,7 +5,13 @@
   "description": "Automatic accessibility repair extension.",
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Open BR1DG3"
+    "default_title": "Open BR1DG3",
+    "default_icon": "logo.png"
+  },
+  "icons": {
+    "16": "logo.png",
+    "48": "logo.png",
+    "128": "logo.png"
   },
   "permissions": [
     "activeTab",
