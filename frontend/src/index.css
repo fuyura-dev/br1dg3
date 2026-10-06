@@ -107,19 +107,20 @@ ol {
 
 body {
   margin: 0;
+  overflow-x: hidden;
   background-color: var(--color-bg);
   background-image:
     /* Subtle grid for IDE feel */
     url("data:image/svg+xml,%3Csvg width='60' height='60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M60 0v60M0 60h60' fill='none' stroke='%230f172a' stroke-width='1' stroke-opacity='0.03' /%3E%3Ccircle cx='60' cy='60' r='1.5' fill='%230f172a' fill-opacity='0.06' /%3E%3C/svg%3E"),
-    /* A more visible Blue to Yellow gradient overlay */
-    linear-gradient(135deg, rgba(37, 99, 235, 0.12) 0%, rgba(250, 204, 21, 0.12) 100%),
     /* The 3D wavy background image */
     url('/white-background-3840x2160-modern-decor-simple-aesthetics-27614.jpg');
-  background-size: 60px 60px, cover, cover;
-  background-position: center, center, center;
-  background-repeat: repeat, no-repeat, no-repeat;
-  background-attachment: fixed, fixed, fixed;
-  background-blend-mode: normal, multiply, normal;
+  
+  /* Initial properties */
+  background-size: 60px 60px, cover;
+  background-position: center, center;
+  background-repeat: repeat, no-repeat;
+  background-attachment: fixed, fixed;
+  background-blend-mode: normal, multiply;
 
   color: var(--color-text-primary);
   font-family: var(--font-sans);

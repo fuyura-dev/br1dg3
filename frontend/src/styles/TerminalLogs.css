@@ -174,13 +174,14 @@
   border: 1px solid #334155;
   padding: 10px;
   border-radius: 4px;
-  overflow-x: auto;
 }
 
 .log-code-block code {
   color: #a7f3d0;
   font-family: 'Consolas', monospace;
   font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 /* Badges */

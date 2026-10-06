@@ -2,12 +2,16 @@ import React, { useState, useEffect, useRef } from 'react';
 import Editor from '@monaco-editor/react';
 import '../../styles/HtmlEditor.css';
 
-const HtmlEditor = ({ initialHtml, onRunScan, onRunRepair, isScanning, isRepairing }) => {
+const HtmlEditor = ({ initialHtml, onRunScan, onRunRepair, isScanning, isRepairing, highlightLine, highlightImpact }) => {
   const [code, setCode] = useState(initialHtml || '');
   
   const [scanTime, setScanTime] = useState(null);
   const [repairTime, setRepairTime] = useState(null);
   const [elapsed, setElapsed] = useState(0);
+
+  const editorRef = useRef(null);
+  const monacoRef = useRef(null);
+  const decorationsRef = useRef(null);
 
   // Keep editor in sync if the parent updates the initial HTML
   useEffect(() => {
@@ -15,6 +19,39 @@ const HtmlEditor = ({ initialHtml, onRunScan, onRunRepair, isScanning, isRepairi
       setCode(initialHtml);
     }
   }, [initialHtml]);
+
+  // Highlight and scroll to line when selected
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (editor && highlightLine) {
+      editor.revealLineInCenter(highlightLine);
+      editor.setPosition({ lineNumber: highlightLine, column: 1 });
+      
+      const impactClass = highlightImpact ? `monaco-highlight-${highlightImpact.toLowerCase()}` : 'monaco-highlight-moderate';
+
+      // Optional: add visual decoration (highlight background)
+      if (decorationsRef.current) {
+        decorationsRef.current.clear();
+      }
+      decorationsRef.current = editor.createDecorationsCollection([
+        {
+          range: new monacoRef.current.Range(highlightLine, 1, highlightLine, 1),
+          options: {
+            isWholeLine: true,
+            className: impactClass,
+            linesDecorationsClassName: `${impactClass}-margin`
+          }
+        }
+      ]);
+    } else if (decorationsRef.current) {
+      decorationsRef.current.clear();
+    }
+  }, [highlightLine, highlightImpact]);
+
+  const handleEditorMount = (editor, monaco) => {
+    editorRef.current = editor;
+    monacoRef.current = monaco;
+  };
 
   // Live timer effect
   useEffect(() => {
@@ -102,6 +139,7 @@ const HtmlEditor = ({ initialHtml, onRunScan, onRunRepair, isScanning, isRepairi
           theme="vs-dark"
           value={code}
           onChange={handleEditorChange}
+          onMount={handleEditorMount}
           options={{
             minimap: { enabled: false },
             wordWrap: 'on',
