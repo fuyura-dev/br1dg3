@@ -1,3 +1,5 @@
+from hashlib import sha256
+from time import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -67,8 +69,16 @@ def _serialize_steps(run) -> list[dict[str, Any]]:
     ]
 
 
+cache = {}
+TTL = 300
+
 @router.post("/repair", response_model=RepairResponse)
 def repair_html(request: RepairRequest):
+    html_hash = sha256(request.html.encode()).hexdigest() # TODO: include if use sdg in hash key
+
+    if html_hash in cache and time() - cache[html_hash]["time"] < TTL:
+        return cache[html_hash]["response"]
+    
     clean_html = preprocess(request.html)
     try:
         violations_before = detect(clean_html)
@@ -109,14 +119,18 @@ def repair_html(request: RepairRequest):
         run_detection_if_missing=False,
     )
 
-    return RepairResponse(
-        fixed_html=run.fixed_html,
-        issues_before=issues_before,
-        issues_after=issues_after,
-        issues_fixed=issues_before - issues_after,
-        summary=_summarize(request, run, issues_before, issues_after),
-        metrics=metrics_report.to_dict(),
-        steps=_serialize_steps(run),
-    )
+    cache[html_hash] = {
+        "response": RepairResponse(
+            fixed_html=run.fixed_html,
+            issues_before=issues_before,
+            issues_after=issues_after,
+            issues_fixed=issues_before - issues_after,
+            summary=_summarize(request, run, issues_before, issues_after),
+            metrics=metrics_report.to_dict(),
+            steps=_serialize_steps(run),
+        ),
+       "time": time()
+    }
+    return cache[html_hash]["response"]
 
 
