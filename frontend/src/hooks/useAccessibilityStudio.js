@@ -75,12 +75,21 @@ export function useAccessibilityStudio() {
     }
   }, []);
 
-  // 3. Initial Load: Check if the Chrome extension passed HTML via localStorage
+  // 3. Initial Load: Check if the Chrome extension passed HTML via url params
   useEffect(() => {
-    const extensionHtml = localStorage.getItem("br1dg3_source_html");
-    if (extensionHtml) {
-      localStorage.removeItem("br1dg3_source_html");
-      runScan(extensionHtml);
+    const params = new URLSearchParams(window.location.search);
+    const encodedHtml = params.get("html");
+
+    function base64Decode(base64) {
+      const binString = atob(base64);
+      const bytes = Uint8Array.from(binString, c => c.charCodeAt(0));
+      return new TextDecoder().decode(bytes);
+    }
+
+    if (encodedHtml) {
+      const html = base64Decode(encodedHtml);
+
+      runScan(html);
     }
   }, [runScan]);
 
