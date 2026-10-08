@@ -241,6 +241,18 @@ def _apply_document_patch(target: Tag, elements: list[Tag]) -> None:
 
 
 
+def _preserve_attribute_order(original_tag: Tag, replacement_tag: Tag) -> None:
+    if original_tag.name == replacement_tag.name and original_tag.attrs:
+        ordered_attrs = {}
+        for attr in original_tag.attrs:
+            if attr in replacement_tag.attrs:
+                ordered_attrs[attr] = replacement_tag.attrs[attr]
+        for attr, val in replacement_tag.attrs.items():
+            if attr not in ordered_attrs:
+                ordered_attrs[attr] = val
+        replacement_tag.attrs = ordered_attrs
+
+
 def apply_reply(target, reply, token):
     """Replace `target` with every element in the reply fragment, in document order."""
     text = clean_reply(reply)
@@ -261,12 +273,16 @@ def apply_reply(target, reply, token):
 
     if target.name in {"html", "body"}:
         if replacement_target.name == target.name:
+            _preserve_attribute_order(target, replacement_target)
             target.attrs.update(replacement_target.attrs)
         _apply_document_patch(target, elements)
         return PatchResult(True, "applied", warnings)
 
     if replacement_target.name != target.name:
         warnings.append("tag_changed")
+    else:
+        _preserve_attribute_order(target, replacement_target)
+
     if replacement_target.get("id") != target.get("id"):
         warnings.append("id_changed")
     inner = [e[MARKER] for e in target.find_all(attrs={MARKER: True})]
