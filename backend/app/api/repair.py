@@ -7,7 +7,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.services.detection.detect import detect
-from app.services.detection.preprocess import preprocess
+from app.services.detection.preprocess import (
+    stash_non_essential,
+    unstash_non_essential,
+)
 from app.services.repair.runner import run_baseline, run_sdg
 from app.services.validation.evaluator import evaluate_repair
 from app.services.repair.log_streamer import streamer
@@ -79,7 +82,7 @@ def repair_html(request: RepairRequest):
     if html_hash in cache and time() - cache[html_hash]["time"] < TTL:
         return cache[html_hash]["response"]
     
-    clean_html = preprocess(request.html)
+    clean_html, stashed_assets = stash_non_essential(request.html)
     try:
         violations_before = detect(clean_html)
     except Exception as e:  # noqa: BLE001
@@ -92,7 +95,7 @@ def repair_html(request: RepairRequest):
 
     if not violations_before:
         return RepairResponse(
-            fixed_html=clean_html, issues_before=0, issues_after=0, issues_fixed=0,
+            fixed_html=request.html, issues_before=0, issues_after=0, issues_fixed=0,
             summary="No accessibility issues detected.",
             steps=[],
         )
@@ -126,9 +129,11 @@ def repair_html(request: RepairRequest):
     )
     streamer.log("[DONE] Evaluation metrics computed successfully. Repair complete!")
 
+    repaired_html = unstash_non_essential(run.fixed_html, stashed_assets)
+
     cache[html_hash] = {
         "response": RepairResponse(
-            fixed_html=run.fixed_html,
+            fixed_html=repaired_html,
             issues_before=issues_before,
             issues_after=issues_after,
             issues_fixed=issues_before - issues_after,
@@ -136,7 +141,7 @@ def repair_html(request: RepairRequest):
             metrics=metrics_report.to_dict(),
             steps=_serialize_steps(run),
         ),
-       "time": time()
+        "time": time()
     }
     return cache[html_hash]["response"]
 

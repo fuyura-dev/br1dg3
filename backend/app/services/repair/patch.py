@@ -1,7 +1,7 @@
 import re
 from dataclasses import dataclass, field
 
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, Comment, Tag
 from bs4.formatter import HTMLFormatter
 
 MARKER = "data-br1dg3"       # temporary tracking attribute: data-br1dg3="v1", "v2", ...
@@ -135,6 +135,18 @@ def _reconcile_container(real_container: Tag, reply_container: Tag) -> None:
                 _reconcile_container(m, top_reply)
         return
 
+    comments_before: list[Comment] = []
+    comments_after: list[Comment] = []
+    seen_visible = False
+    for c in list(real_container.children):
+        if isinstance(c, Tag) and c.name not in HIDDEN_IN_PROMPT_TAGS:
+            seen_visible = True
+        elif isinstance(c, Comment):
+            if seen_visible:
+                comments_after.append(c.extract())
+            else:
+                comments_before.append(c.extract())
+
     def hydrate_node(reply_node: Tag) -> list[Tag]:
         matched = id_map.get(id(reply_node))
         if matched is None:
@@ -198,7 +210,13 @@ def _reconcile_container(real_container: Tag, reply_container: Tag) -> None:
 
     real_container.clear()
     real_container.append("\n")
+    for el in comments_before:
+        real_container.append(el)
+        real_container.append("\n")
     for el in new_children + leftover_visible + preserved_hidden:
+        real_container.append(el)
+        real_container.append("\n")
+    for el in comments_after:
         real_container.append(el)
         real_container.append("\n")
 
