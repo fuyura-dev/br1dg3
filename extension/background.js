@@ -359,6 +359,51 @@ async function runRepairOnly(tabId, tabUrl) {
   }
 }
 
+async function getTabOriginalHtml(tabId) {
+  const tabState = await getTabState(tabId);
+  if (tabState?.originalHtml) return tabState.originalHtml;
+  try {
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => (document.documentElement ? document.documentElement.outerHTML : ''),
+    });
+    return result || '';
+  } catch (_) {
+    return '';
+  }
+}
+
+async function openStudio(tabId) {
+  const html = await getTabOriginalHtml(tabId);
+  const tab = await chrome.tabs.create({
+    url: "http://127.0.0.1:5173/studio?extension=1"
+  });
+
+  const listener = async (tabId, changeInfo) => {
+    if (tabId !== tab.id || changeInfo.status !== "complete") {
+      return;
+    }
+
+    chrome.tabs.onUpdated.removeListener(listener);
+
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (html) => {
+        window.postMessage(
+          {
+            source: "BR1DG3",
+            html
+          },
+          "*"
+        );
+      },
+      args: [html]
+    });
+  };
+
+  chrome.tabs.onUpdated.addListener(listener);
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
   const { autoRepair } = await chrome.storage.local.get({ autoRepair: false });
   await chrome.storage.local.set({ autoRepair: Boolean(autoRepair) });
@@ -393,5 +438,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === 'OPEN_STUDIO') {
+    openStudio(message.tabId);
+  }
   return false;
 });

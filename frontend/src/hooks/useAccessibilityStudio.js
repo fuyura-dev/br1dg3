@@ -78,20 +78,23 @@ export function useAccessibilityStudio() {
   // 3. Initial Load: Check if the Chrome extension passed HTML via url params
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const encodedHtml = params.get("html");
+    const extension = params.get("extension");
 
-    function base64Decode(base64) {
-      const binString = atob(base64);
-      const bytes = Uint8Array.from(binString, c => c.charCodeAt(0));
-      return new TextDecoder().decode(bytes);
-    }
+    if (!extension) return;
+    
+    const handleMessage = (event) => {
+      if (event.data?.source !== "BR1DG3") {
+        return;
+      }
+      runScan(event.data.html);
+    };
 
-    if (encodedHtml) {
-      const html = base64Decode(encodedHtml);
+    window.addEventListener("message", handleMessage);
 
-      runScan(html);
-    }
-  }, [runScan]);
+    return () => {
+      window.removeEventListener("message", handleMessage);
+    };
+  }, []);
 
   // 4. Select Violation: Fetch detailed SDG context and repair strategies
   const selectViolation = useCallback(async (violationId) => {

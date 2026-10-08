@@ -424,44 +424,15 @@
       }
     }
   }
-
-  function getTabStateKey(tabId) {
-    return `tabState_${tabId}`;
-  }
-
-  async function getTabState(tabId) {
-    const key = getTabStateKey(tabId);
-    const data = await chrome.storage.local.get(key);
-    return data[key] || null;
-  }
-
-  async function getTabOriginalHtml(tabId) {
-    const tabState = await getTabState(tabId);
-    if (tabState?.originalHtml) return tabState.originalHtml;
-    try {
-      const [{ result }] = await chrome.scripting.executeScript({
-        target: { tabId },
-        func: () => (document.documentElement ? document.documentElement.outerHTML : ''),
-      });
-      return result || '';
-    } catch (_) {
-      return '';
-    }
-  }
-
+  
   async function handleOpenStudio() {
-    function base64Encode(text) {
-      const bytes = new TextEncoder().encode(text);
-      const binString = String.fromCodePoint(...bytes);
-      return btoa(binString);
-    }
+    const tab = await getActiveTab();
+    if (!tab) return;
 
-    const html = await getTabOriginalHtml(currentTabId);
-    const encodedHtml = base64Encode(html);
-
-    const url = `http://127.0.0.1:5173/studio?html=${encodeURIComponent(encodedHtml)}`;
-
-    window.open(url, '_blank', 'noopener');
+    await chrome.runtime.sendMessage({
+      type: 'OPEN_STUDIO',
+      tabId: tab.id,
+    });
   }
 
   async function initializePopup() {
