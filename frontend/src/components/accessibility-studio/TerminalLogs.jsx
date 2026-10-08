@@ -55,7 +55,12 @@ function parseLogLine(log) {
     return { type: 'post_repair', text: log.replace('[POST-REPAIR]', '').trim(), raw: log };
   }
 
-  // 8. Workflow complete
+  // 8. Individual evaluation metric
+  if (log.includes('[METRICS]')) {
+    return { type: 'metric', text: log.replace('[METRICS]', '').trim(), raw: log };
+  }
+
+  // 9. Workflow complete
   if (log.includes('[DONE]')) {
     return { type: 'done', text: log.replace('[DONE]', '').trim(), raw: log };
   }
@@ -126,6 +131,12 @@ function LogItem({ item }) {
       icon = <IconAnalyze />;
       title = <span>Verification & Metrics</span>;
       badge = <span className="log-badge badge-info">VERIFY</span>;
+      content = item.text;
+      break;
+    case 'metric':
+      icon = <IconAnalyze />;
+      title = <span>Thesis Metric</span>;
+      badge = <span className="log-badge badge-info">METRIC</span>;
       content = item.text;
       break;
     case 'done':

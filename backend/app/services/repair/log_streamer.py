@@ -6,7 +6,7 @@ class LogStreamer:
         self.subscribers = []
 
     def log(self, message: str):
-        print(message)
+        print(message, flush=True)
         self.logs.append(message)
         # Keep only the last 1000 logs to prevent memory leak
         if len(self.logs) > 1000:

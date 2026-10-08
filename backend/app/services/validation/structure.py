@@ -179,12 +179,38 @@ def zss_tree_edit_distance(root1: TreeNode | None, root2: TreeNode | None) -> in
     return tree_dist[n1][n2]
 
 
+def prune_shared_identical_subtrees(root1: TreeNode, root2: TreeNode) -> tuple[TreeNode, TreeNode]:
+    hashes1: dict[TreeNode, tuple] = {}
+    hashes2: dict[TreeNode, tuple] = {}
+
+    def compute_hashes(node: TreeNode, storage: dict[TreeNode, tuple]) -> tuple:
+        children_hashes = tuple(compute_hashes(c, storage) for c in node.children)
+        h = (node.label, children_hashes)
+        storage[node] = h
+        return h
+
+    h1 = compute_hashes(root1, hashes1)
+    h2 = compute_hashes(root2, hashes2)
+
+    if h1 == h2:
+        return TreeNode("__id__"), TreeNode("__id__")
+
+    shared_hashes = set(hashes1.values()) & set(hashes2.values())
+
+    def simplify(n: TreeNode, storage: dict[TreeNode, tuple]) -> TreeNode:
+        if storage[n] in shared_hashes:
+            return TreeNode(f"__eq_{hash(storage[n])}__")
+        return TreeNode(n.label, [simplify(c, storage) for c in n.children])
+
+    return simplify(root1, hashes1), simplify(root2, hashes2)
+
+
 def calculate_structural_preservation(
     html_original: str | None,
     html_repaired: str | None,
     threshold: float = 0.85,
 ) -> StructureResult:
-    """Calculate per-document Structural Preservation.    """
+    """Calculate per-document Structural Preservation."""
     t_orig = html_to_tree(html_original)
     t_rep = html_to_tree(html_repaired)
 
@@ -204,7 +230,11 @@ def calculate_structural_preservation(
             unparseable=True,
         )
 
-    ted = zss_tree_edit_distance(t_orig, t_rep)
+    if html_original and html_repaired and html_original.strip() == html_repaired.strip():
+        ted = 0
+    else:
+        p_orig, p_rep = prune_shared_identical_subtrees(t_orig, t_rep)
+        ted = zss_tree_edit_distance(p_orig, p_rep)
     similarity = round(max(0.0, 1.0 - (ted / max_nodes)), 4)
     preserved = similarity >= threshold
 

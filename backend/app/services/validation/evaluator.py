@@ -20,6 +20,7 @@ from app.services.validation.structure import (
     StructureResult,
     calculate_structural_preservation,
 )
+from app.services.repair.log_streamer import streamer
 
 
 @dataclass
@@ -74,15 +75,25 @@ def evaluate_repair(
         violations_after=violations_after,
         scan_failed=scan_failed,
     )
+    streamer.log(
+        f"[METRICS] 1/5 Effectiveness: {effectiveness.reduction_rate}% violation reduction "
+        f"({effectiveness.violations_before} -> {effectiveness.violations_after} violations)"
+    )
 
     # 2. Metric 2: Repair Safety (Syntactic Validity)
     safety = calculate_safety(html_repaired)
+    status_str = "Valid" if safety.is_valid else f"Invalid ({safety.reason})"
+    streamer.log(f"[METRICS] 2/5 Safety: Syntactic {status_str} ({safety.element_count} elements)")
 
     # 3. Metric 3: Structural Preservation
     structure = calculate_structural_preservation(
         html_original=html_original,
         html_repaired=html_repaired,
         threshold=structure_threshold,
+    )
+    streamer.log(
+        f"[METRICS] 3/5 Structure: TED={structure.tree_edit_distance} edits on max {structure.max_nodes} DOM "
+        f"({structure.structure_similarity * 100:.2f}% preserved)"
     )
 
     # 4. Metric 4: Repair Efficiency
@@ -100,11 +111,19 @@ def evaluate_repair(
         )
     else:
         efficiency = calculate_efficiency(0, 0, 0, 0)
+    streamer.log(
+        f"[METRICS] 4/5 Efficiency: {efficiency.total_tokens} tokens across {efficiency.api_calls} API calls "
+        f"(${efficiency.cost_usd:.4f})"
+    )
 
     # 5. Metric 5: Semantic Dependency Preservation
     semantic = calculate_semantic_preservation(
         html_original=html_original,
         html_repaired=html_repaired,
+    )
+    streamer.log(
+        f"[METRICS] 5/5 Semantic: {semantic.dependencies_valid} of {semantic.dependencies_before} relationships intact "
+        f"({semantic.preservation_rate}%)"
     )
 
     return EvaluationReport(
