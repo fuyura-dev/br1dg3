@@ -50,6 +50,16 @@ function parseLogLine(log) {
     if (match) return { type: 'applied', token: match[1], status: match[2].trim(), raw: log };
   }
 
+  // 7. Post-repair verification / evaluation
+  if (log.includes('[POST-REPAIR]')) {
+    return { type: 'post_repair', text: log.replace('[POST-REPAIR]', '').trim(), raw: log };
+  }
+
+  // 8. Workflow complete
+  if (log.includes('[DONE]')) {
+    return { type: 'done', text: log.replace('[DONE]', '').trim(), raw: log };
+  }
+
   if (log.includes('---')) return { type: 'divider', raw: log };
 
   return { type: 'raw', content: log };
@@ -111,6 +121,18 @@ function LogItem({ item }) {
       title = <span>Patch Application Result</span>;
       badge = <span className={`log-badge ${isOk ? 'badge-success' : 'badge-danger'}`}>{item.token}</span>;
       content = `Status: ${item.status}`;
+      break;
+    case 'post_repair':
+      icon = <IconAnalyze />;
+      title = <span>Verification & Metrics</span>;
+      badge = <span className="log-badge badge-info">VERIFY</span>;
+      content = item.text;
+      break;
+    case 'done':
+      icon = <IconCheck />;
+      title = <span>Repair Complete</span>;
+      badge = <span className="log-badge badge-success">DONE</span>;
+      content = item.text;
       break;
     default:
       return null;

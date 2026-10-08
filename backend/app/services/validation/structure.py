@@ -112,8 +112,8 @@ def zss_tree_edit_distance(root1: TreeNode | None, root2: TreeNode | None) -> in
     idx1 = {node: i + 1 for i, node in enumerate(nodes1)}
     idx2 = {node: i + 1 for i, node in enumerate(nodes2)}
 
-    def get_lld(nodes: list[TreeNode], idx_map: dict[TreeNode, int]) -> dict[int, int]:
-        lld = {}
+    def get_lld(nodes: list[TreeNode], idx_map: dict[TreeNode, int]) -> list[int]:
+        lld = [0] * (len(nodes) + 1)
         for node in nodes:
             curr = node
             while curr.children:
@@ -124,10 +124,12 @@ def zss_tree_edit_distance(root1: TreeNode | None, root2: TreeNode | None) -> in
     lld1 = get_lld(nodes1, idx1)
     lld2 = get_lld(nodes2, idx2)
 
-    def get_keyroots(nodes: list[TreeNode], lld: dict[int, int]) -> list[int]:
+    def get_keyroots(nodes: list[TreeNode], lld: list[int]) -> list[int]:
         kr: list[int] = []
+        seen = set()
         for i in range(len(nodes), 0, -1):
-            if lld[i] not in [lld[k] for k in kr]:
+            if lld[i] not in seen:
+                seen.add(lld[i])
                 kr.append(i)
         kr.reverse()
         return kr
@@ -135,37 +137,46 @@ def zss_tree_edit_distance(root1: TreeNode | None, root2: TreeNode | None) -> in
     kr1 = get_keyroots(nodes1, lld1)
     kr2 = get_keyroots(nodes2, lld2)
 
-    tree_dist: dict[tuple[int, int], int] = {}
+    labels1 = [node.label for node in nodes1]
+    labels2 = [node.label for node in nodes2]
+
+    # Pre-allocate 2D table for fast lookup without tuple dict overhead
+    tree_dist = [[0] * (n2 + 1) for _ in range(n1 + 1)]
 
     for i_kr in kr1:
         for j_kr in kr2:
-            i_off = lld1[i_kr] - 1
-            j_off = lld2[j_kr] - 1
-            fd: dict[tuple[int, int], int] = {(i_off, j_off): 0}
+            l1 = lld1[i_kr]
+            l2 = lld2[j_kr]
+            m_rows = i_kr - l1 + 2
+            m_cols = j_kr - l2 + 2
+            fd = [[0] * m_cols for _ in range(m_rows)]
 
-            for i in range(lld1[i_kr], i_kr + 1):
-                fd[(i, j_off)] = fd[(i - 1, j_off)] + 1
-            for j in range(lld2[j_kr], j_kr + 1):
-                fd[(i_off, j)] = fd[(i_off, j - 1)] + 1
+            for i in range(1, m_rows):
+                fd[i][0] = i
+            for j in range(1, m_cols):
+                fd[0][j] = j
 
-            for i in range(lld1[i_kr], i_kr + 1):
-                for j in range(lld2[j_kr], j_kr + 1):
-                    cost = 0 if nodes1[i - 1].label == nodes2[j - 1].label else 1
-                    if lld1[i] == lld1[i_kr] and lld2[j] == lld2[j_kr]:
-                        fd[(i, j)] = min(
-                            fd[(i - 1, j)] + 1,
-                            fd[(i, j - 1)] + 1,
-                            fd[(i - 1, j - 1)] + cost,
+            for i in range(1, m_rows):
+                node_i_idx = l1 + i - 1
+                label_i = labels1[node_i_idx - 1]
+                for j in range(1, m_cols):
+                    node_j_idx = l2 + j - 1
+                    cost = 0 if label_i == labels2[node_j_idx - 1] else 1
+                    if lld1[node_i_idx] == l1 and lld2[node_j_idx] == l2:
+                        fd[i][j] = min(
+                            fd[i - 1][j] + 1,
+                            fd[i][j - 1] + 1,
+                            fd[i - 1][j - 1] + cost,
                         )
-                        tree_dist[(i, j)] = fd[(i, j)]
+                        tree_dist[node_i_idx][node_j_idx] = fd[i][j]
                     else:
-                        fd[(i, j)] = min(
-                            fd[(i - 1, j)] + 1,
-                            fd[(i, j - 1)] + 1,
-                            fd[(lld1[i] - 1, lld2[j] - 1)] + tree_dist[(i, j)],
+                        fd[i][j] = min(
+                            fd[i - 1][j] + 1,
+                            fd[i][j - 1] + 1,
+                            fd[lld1[node_i_idx] - l1][lld2[node_j_idx] - l2] + tree_dist[node_i_idx][node_j_idx],
                         )
 
-    return tree_dist.get((n1, n2), 0)
+    return tree_dist[n1][n2]
 
 
 def calculate_structural_preservation(

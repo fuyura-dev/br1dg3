@@ -137,11 +137,24 @@ def detect(html: str):
         )
         driver.execute_script(AXE_SCRIPT)
 
-        violations = driver.execute_async_script(
-            'axe.run({}, (err, results) => arguments[0](results))'
-        )['violations']
+        raw_res = driver.execute_async_script(
+            """
+            try {
+                axe.run({}, (err, results) => {
+                    if (err) {
+                        arguments[0]({ error: String(err), violations: [] });
+                    } else {
+                        arguments[0](results || { violations: [] });
+                    }
+                });
+            } catch (e) {
+                arguments[0]({ error: String(e), violations: [] });
+            }
+            """
+        )
+        violations = (raw_res or {}).get('violations', []) if isinstance(raw_res, dict) else []
 
-        return list(filter(lambda v: v['id'] in RELEVANT_RULES, violations))
+        return list(filter(lambda v: v.get('id') in RELEVANT_RULES, violations))
     finally:
         if driver:
             try:

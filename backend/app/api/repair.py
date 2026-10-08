@@ -100,15 +100,21 @@ def repair_html(request: RepairRequest):
     run = run_sdg(clean_html, violations_before) if request.use_sdg \
         else run_baseline(clean_html, violations_before)
 
+    streamer.log("[POST-REPAIR] Repair steps completed. Starting post-repair verification...")
+    streamer.log("[POST-REPAIR] Running post-repair Axe accessibility scan on fixed HTML...")
+
     try:
         violations_after = detect(run.fixed_html)
     except Exception as e:  # noqa: BLE001
+        streamer.log(f"[POST-REPAIR] Post-repair detection failed: {e!s}")
         raise HTTPException(
             status_code=503,
             detail=f"Post-repair detection failed: {e!s}",
         )
 
     issues_after = _count_issues(violations_after)
+    streamer.log(f"[POST-REPAIR] Axe scan completed: {issues_before} -> {issues_after} issues ({issues_before - issues_after} resolved).")
+    streamer.log("[POST-REPAIR] Computing evaluation metrics (Effectiveness, Safety, Structure, Efficiency, Semantic)...")
 
     metrics_report = evaluate_repair(
         html_original=clean_html,
@@ -118,6 +124,7 @@ def repair_html(request: RepairRequest):
         repair_run=run,
         run_detection_if_missing=False,
     )
+    streamer.log("[DONE] Evaluation metrics computed successfully. Repair complete!")
 
     cache[html_hash] = {
         "response": RepairResponse(
