@@ -28,9 +28,11 @@ class ScanResponse(BaseModel):
 
 @router.post("/scan", response_model=ScanResponse)
 def scan_html(request: ScanRequest):
+    print(f"\n[SCAN] Received scan request from extension ({len(request.html)} characters)")
     try:
         violations = detect(request.html)
     except Exception as e:
+        print(f"[SCAN] Detection failed: {e}")
         raise HTTPException(
             status_code=503,
             detail=f"Accessibility detection failed: {str(e)}",
@@ -53,6 +55,7 @@ def scan_html(request: ScanRequest):
                 )
             )
 
+    print(f"[SCAN] Detection completed: Found {len(issues)} violations across {len(violations)} rules.")
     return ScanResponse(total_issues=len(issues), issues=issues)
 
 

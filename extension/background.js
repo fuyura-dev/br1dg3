@@ -30,9 +30,34 @@ async function setTabState(tabId, state) {
     ...state,
     updatedAt: Date.now(),
   };
-  await chrome.storage.local.set({
-    [getTabStateKey(tabId)]: nextState,
-  });
+  const key = getTabStateKey(tabId);
+  try {
+    await chrome.storage.local.set({
+      [key]: nextState,
+    });
+  } catch (err) {
+    if (String(err).includes('quota') || String(err).includes('kQuotaBytes') || String(err).includes('QuotaExceeded')) {
+      console.warn(`[BR1DG3 Background] Storage quota exceeded. Pruning old tab states...`);
+      try {
+        const all = await chrome.storage.local.get(null);
+        const otherKeys = Object.keys(all).filter((k) => k.startsWith('tabState_') && k !== key);
+        if (otherKeys.length > 0) {
+          await chrome.storage.local.remove(otherKeys);
+        }
+        await chrome.storage.local.set({ [key]: nextState });
+      } catch (_) {
+        // Fallback: trim oversized HTML if page is massive
+        const compactState = {
+          ...nextState,
+          originalHtml: nextState.originalHtml ? nextState.originalHtml.slice(0, 500000) : null,
+          repairedHtml: null,
+        };
+        await chrome.storage.local.set({ [key]: compactState }).catch(() => {});
+      }
+    } else {
+      console.error(`[BR1DG3 Background] Error setting tab state:`, err);
+    }
+  }
   return nextState;
 }
 
@@ -208,21 +233,42 @@ async function runScanAndMaybeRepair(tabId, tabUrl, { forceScan = false } = {}) 
 
   const existingState = await getTabState(tabId);
 
-  // 1. Track ongoing scan/repair: never start another if one is already in progress
+  // 1. Track ongoing scan/repair: only block if not forceScan and not stale (> 30s)
   if (
     existingState &&
     (existingState.status === 'scanning' || existingState.status === 'repairing')
   ) {
-    return existingState;
+    const isStale = Date.now() - (existingState.updatedAt || 0) > 30000;
+    if (!forceScan && !isStale) {
+      return existingState;
+    }
   }
 
   let currentHtml = '';
   try {
     currentHtml = await getTabHtml(tabId);
-  } catch (_) {
-    return null;
+  } catch (err) {
+    console.error(`[BR1DG3 Background] Failed to get HTML for tab ${tabId}:`, err);
+    const isFileUrl = tabUrl && tabUrl.startsWith('file://');
+    return await setTabState(tabId, {
+      url: tabUrl,
+      status: 'error',
+      originalHtml: null,
+      repairedHtml: null,
+      error: isFileUrl
+        ? 'Cannot access local file. Please enable "Allow access to file URLs" in chrome://extensions -> BR1DG3 Details.'
+        : `Cannot access webpage DOM: ${err.message || err}`,
+    });
   }
-  if (!currentHtml) return null;
+  if (!currentHtml) {
+    return await setTabState(tabId, {
+      url: tabUrl,
+      status: 'error',
+      originalHtml: null,
+      repairedHtml: null,
+      error: 'Page DOM is empty or not yet loaded. Please refresh the page and try again.',
+    });
+  }
 
   // 2. Avoid scanning/repairing again if current HTML equals originalHtml or repairedHtml
   if (
@@ -284,12 +330,15 @@ async function runScanAndMaybeRepair(tabId, tabUrl, { forceScan = false } = {}) 
 async function runRepairOnly(tabId, tabUrl) {
   const existingState = await getTabState(tabId);
 
-  // 1. Track ongoing scan/repair: do not start another if one is already running
+  // 1. Track ongoing scan/repair: do not start another if one is already running and fresh (< 60s)
   if (
     existingState &&
     (existingState.status === 'scanning' || existingState.status === 'repairing')
   ) {
-    return existingState;
+    const isStale = Date.now() - (existingState.updatedAt || 0) > 60000;
+    if (!isStale) {
+      return existingState;
+    }
   }
 
   try {

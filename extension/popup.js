@@ -275,14 +275,22 @@
     currentTabId = tab.id;
 
     applyTabStateToUi({ status: 'scanning' });
-    const response = await chrome.runtime.sendMessage({
-      type: 'SCAN_TAB',
-      tabId: tab.id,
-      url: tab.url,
-      forceScan,
-    });
-    if (response && response.state) {
-      applyTabStateToUi(response.state);
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'SCAN_TAB',
+        tabId: tab.id,
+        url: tab.url,
+        forceScan,
+      });
+      if (response && response.state) {
+        applyTabStateToUi(response.state);
+      } else if (response && response.error) {
+        showError(response.error);
+        applyTabStateToUi({ status: 'error', error: response.error });
+      }
+    } catch (err) {
+      showError(err.message || 'Failed to communicate with extension background worker.');
+      applyTabStateToUi({ status: 'error', error: err.message });
     }
   }
 
@@ -429,7 +437,16 @@
 
   async function getTabOriginalHtml(tabId) {
     const tabState = await getTabState(tabId);
-    return tabState.originalHtml;
+    if (tabState?.originalHtml) return tabState.originalHtml;
+    try {
+      const [{ result }] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => (document.documentElement ? document.documentElement.outerHTML : ''),
+      });
+      return result || '';
+    } catch (_) {
+      return '';
+    }
   }
 
   async function handleOpenStudio() {
