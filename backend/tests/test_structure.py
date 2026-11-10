@@ -1,6 +1,7 @@
 import unittest
 
 from app.services.validation.structure import (
+    calculate_legacy_pruned_structural_preservation,
     calculate_structural_preservation,
 )
 
@@ -31,6 +32,53 @@ class TestStructuralPreservation(unittest.TestCase):
         self.assertEqual(result.tree_edit_distance, 1)
         self.assertGreaterEqual(result.structure_similarity, 0.85)
         self.assertTrue(result.structure_preserved)
+
+    def test_repeated_subtree_deletion_counts_all_deleted_nodes(self):
+        subtree = '<div><p><span>Keep</span></p></div>'
+        orig = '<html><body>' + subtree * 4 + '</body></html>'
+        rep = '<html><body>' + subtree * 3 + '</body></html>'
+
+        result = calculate_structural_preservation(orig, rep)
+        self.assertEqual(result.original_nodes, 14)
+        self.assertEqual(result.repaired_nodes, 11)
+        self.assertEqual(result.max_nodes, 14)
+        self.assertEqual(result.tree_edit_distance, 3)
+        self.assertEqual(result.structure_similarity, 0.7857)
+        self.assertFalse(result.structure_preserved)
+
+        legacy = calculate_legacy_pruned_structural_preservation(orig, rep)
+        self.assertEqual(legacy.max_nodes, 14)
+        self.assertEqual(legacy.tree_edit_distance, 1)
+        self.assertEqual(legacy.structure_similarity, 0.9286)
+        self.assertTrue(legacy.structure_preserved)
+
+    def test_repeated_subtree_insertion_counts_all_inserted_nodes(self):
+        subtree = '<div><p><span>Keep</span></p></div>'
+        orig = '<html><body>' + subtree * 3 + '</body></html>'
+        rep = '<html><body>' + subtree * 4 + '</body></html>'
+
+        result = calculate_structural_preservation(orig, rep)
+        self.assertEqual(result.tree_edit_distance, 3)
+        self.assertEqual(result.structure_similarity, 0.7857)
+        self.assertFalse(result.structure_preserved)
+
+        legacy = calculate_legacy_pruned_structural_preservation(orig, rep)
+        self.assertEqual(legacy.tree_edit_distance, 1)
+        self.assertTrue(legacy.structure_preserved)
+
+    def test_text_and_attribute_changes_do_not_change_element_tree(self):
+        orig = '<html><body><button>Old</button></body></html>'
+        rep = '<html><body><button aria-label="New label">New</button></body></html>'
+
+        for calculate in (
+            calculate_structural_preservation,
+            calculate_legacy_pruned_structural_preservation,
+        ):
+            with self.subTest(method=calculate.__name__):
+                result = calculate(orig, rep)
+                self.assertEqual(result.tree_edit_distance, 0)
+                self.assertEqual(result.structure_similarity, 1.0)
+                self.assertTrue(result.structure_preserved)
 
     def test_drastic_structural_destruction_not_preserved(self):
         # Large original page wiped out by LLM hallucination down to a single tag

@@ -180,6 +180,7 @@ def zss_tree_edit_distance(root1: TreeNode | None, root2: TreeNode | None) -> in
 
 
 def prune_shared_identical_subtrees(root1: TreeNode, root2: TreeNode) -> tuple[TreeNode, TreeNode]:
+    """Legacy comparison only: this contraction does not preserve exact edit costs."""
     hashes1: dict[TreeNode, tuple] = {}
     hashes2: dict[TreeNode, tuple] = {}
 
@@ -210,7 +211,30 @@ def calculate_structural_preservation(
     html_repaired: str | None,
     threshold: float = 0.85,
 ) -> StructureResult:
-    """Calculate per-document Structural Preservation."""
+    """Calculate the primary metric using exact TED on complete preprocessed trees."""
+    return _calculate_structural_preservation(
+        html_original, html_repaired, threshold, legacy_pruning=False,
+    )
+
+
+def calculate_legacy_pruned_structural_preservation(
+    html_original: str | None,
+    html_repaired: str | None,
+    threshold: float = 0.85,
+) -> StructureResult:
+    """Reproduce the old pruned metric for comparison, not experimental reporting."""
+    return _calculate_structural_preservation(
+        html_original, html_repaired, threshold, legacy_pruning=True,
+    )
+
+
+def _calculate_structural_preservation(
+    html_original: str | None,
+    html_repaired: str | None,
+    threshold: float,
+    *,
+    legacy_pruning: bool,
+) -> StructureResult:
     t_orig = html_to_tree(html_original)
     t_rep = html_to_tree(html_repaired)
 
@@ -233,8 +257,9 @@ def calculate_structural_preservation(
     if html_original and html_repaired and html_original.strip() == html_repaired.strip():
         ted = 0
     else:
-        p_orig, p_rep = prune_shared_identical_subtrees(t_orig, t_rep)
-        ted = zss_tree_edit_distance(p_orig, p_rep)
+        if legacy_pruning:
+            t_orig, t_rep = prune_shared_identical_subtrees(t_orig, t_rep)
+        ted = zss_tree_edit_distance(t_orig, t_rep)
     similarity = round(max(0.0, 1.0 - (ted / max_nodes)), 4)
     preserved = similarity >= threshold
 

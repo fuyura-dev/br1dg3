@@ -4,6 +4,7 @@
 
 * [**App**](./app/README.md) - Overview of structure
 * [**API**](./app/api/README.md) - Request and response schemas
+* [**Structural preservation**](./app/services/validation/README.md) - Unpruned TED and optional legacy comparison
 
 ## Setup
 ```
