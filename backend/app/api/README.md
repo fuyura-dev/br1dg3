@@ -44,18 +44,32 @@ Repairs accessibility violations in the given HTML.
 ```json
 {
   "html": "<html><body><img src='logo.png'></body></html>",
-  "use_sdg": true
+  "use_sdg": true,
+  "use_cache": true
 }
 ```
+
+`use_cache` defaults to `true`, so existing frontend and extension requests reuse
+completed repair responses for up to five minutes. Cache entries are separated by the input HTML and `use_sdg`.
+
+For experimental runs, send `"use_cache": false` for both repair methods. This
+bypasses cache reads and writes: it neither reuses nor replaces a stored response.
+Requests with no detected issues return without running a repair and are not cached.
 
 ### Response Body
 ```json
 {
   "fixed_html": "<html><body><img src='logo.png' alt='Company Logo'></body></html>",
+  "issues_before": 1,
+  "issues_after": 0,
   "issues_fixed": 1,
-  "summary": "Added alt text to image"
+  "summary": "Added alt text to image",
+  "cache_hit": false
 }
 ```
+
+`cache_hit` is `true` only when a stored response is reused. Its summary, metrics,
+and steps describe the original repair run, not new LLM usage for the current request.
 
 ---
 

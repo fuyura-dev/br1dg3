@@ -1,10 +1,10 @@
 from hashlib import sha256
-from time import time
+from time import monotonic
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.services.detection.detect import detect
 from app.services.detection.preprocess import (
@@ -24,6 +24,10 @@ async def repair_logs():
 class RepairRequest(BaseModel):
     html: str
     use_sdg: bool = True
+    use_cache: bool = Field(
+        default=True,
+        description="Reuse cached repair responses. Set false to bypass cache reads and writes.",
+    )
 
 class RepairResponse(BaseModel):
     fixed_html: str
@@ -33,6 +37,10 @@ class RepairResponse(BaseModel):
     summary: str
     metrics: dict[str, Any] | None = None
     steps: list[dict[str, Any]] | None = None
+    cache_hit: bool = Field(
+        default=False,
+        description="True when reusing a cached response; metrics describe the original repair run.",
+    )
 
 
 def _count_issues(violations: list[dict]) -> int:
@@ -72,16 +80,22 @@ def _serialize_steps(run) -> list[dict[str, Any]]:
     ]
 
 
-cache = {}
+cache: dict[tuple[str, bool], tuple[float, RepairResponse]] = {}
 TTL = 300
+
 
 @router.post("/repair", response_model=RepairResponse)
 def repair_html(request: RepairRequest):
-    html_hash = sha256(request.html.encode()).hexdigest() # TODO: include if use sdg in hash key
+    cache_key = None
+    if request.use_cache:
+        cache_key = (sha256(request.html.encode()).hexdigest(), request.use_sdg)
+        cached = cache.get(cache_key)
+        if cached is not None:
+            stored_at, cached_response = cached
+            if monotonic() - stored_at < TTL:
+                return cached_response.model_copy(update={"cache_hit": True}, deep=True)
+            cache.pop(cache_key, None)
 
-    if html_hash in cache and time() - cache[html_hash]["time"] < TTL:
-        return cache[html_hash]["response"]
-    
     clean_html, stashed_assets = stash_non_essential(request.html)
     try:
         violations_before = detect(clean_html)
@@ -131,18 +145,15 @@ def repair_html(request: RepairRequest):
 
     repaired_html = unstash_non_essential(run.fixed_html, stashed_assets)
 
-    cache[html_hash] = {
-        "response": RepairResponse(
-            fixed_html=repaired_html,
-            issues_before=issues_before,
-            issues_after=issues_after,
-            issues_fixed=issues_before - issues_after,
-            summary=_summarize(request, run, issues_before, issues_after),
-            metrics=metrics_report.to_dict(),
-            steps=_serialize_steps(run),
-        ),
-        "time": time()
-    }
-    return cache[html_hash]["response"]
-
-
+    response = RepairResponse(
+        fixed_html=repaired_html,
+        issues_before=issues_before,
+        issues_after=issues_after,
+        issues_fixed=issues_before - issues_after,
+        summary=_summarize(request, run, issues_before, issues_after),
+        metrics=metrics_report.to_dict(),
+        steps=_serialize_steps(run),
+    )
+    if cache_key is not None:
+        cache[cache_key] = (monotonic(), response.model_copy(deep=True))
+    return response
