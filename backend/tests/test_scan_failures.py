@@ -1,11 +1,15 @@
 import io
+import json
+import tempfile
 import unittest
 from contextlib import redirect_stdout
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from app.api import evaluate as evaluate_api
 from app.api import scan as scan_api
 from app.services.detection import detect as detection
+from app.services.repair import failed_runs
 from app.services.validation import evaluator
 from fastapi import HTTPException
 
@@ -24,9 +28,13 @@ class TestScanFailureHandling(unittest.TestCase):
         self.get_driver = self.enterContext(
             patch.object(detection, "_get_driver", return_value=self.driver)
         )
-        self.enterContext(patch.object(evaluator.streamer, "log"))
+        self.log = self.enterContext(patch.object(evaluator.streamer, "log"))
         self.enterContext(redirect_stdout(io.StringIO()))
         self.enterContext(patch.dict(repair_api.cache, {}, clear=True))
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.records_dir = Path(directory.name) / "failed_runs"
+        self.enterContext(patch.object(failed_runs, "FAILED_RUNS_DIR", self.records_dir))
         self.run_sdg = self.enterContext(patch.object(repair_api, "run_sdg"))
         self.run_baseline = self.enterContext(patch.object(repair_api, "run_baseline"))
 
@@ -159,12 +167,47 @@ class TestScanFailureHandling(unittest.TestCase):
         self.run_sdg.assert_not_called()
         self.run_baseline.assert_not_called()
         self.assertEqual(repair_api.cache, {})
+        self.assertFalse(self.records_dir.exists())
 
     def test_repair_final_scan_failure_does_not_return_or_cache_success(self):
         run = RepairRun(fixed_html=self.html, steps=[], unmapped=0)
         self.run_sdg.return_value = run
         self.run_baseline.return_value = run
         with patch.object(repair_api, "evaluate_repair") as evaluate:
+            for use_sdg, use_cache in ((True, True), (False, True), (True, False), (False, False)):
+                with self.subTest(use_sdg=use_sdg, use_cache=use_cache):
+                    self.driver.execute_async_script.side_effect = [
+                        {"violations": self.violations}, self.error_result,
+                    ]
+                    with self.assertRaises(HTTPException) as caught:
+                        repair_api.repair_html(
+                            repair_api.RepairRequest(html=self.html, use_sdg=use_sdg, use_cache=use_cache)
+                        )
+                    self.assertEqual(caught.exception.status_code, 503)
+                    self.assertIn("Post-repair", caught.exception.detail)
+                    self.assertIn("Axe crashed", caught.exception.detail)
+            evaluate.assert_not_called()
+
+        self.assertEqual(self.run_sdg.call_count, 2)
+        self.assertEqual(self.run_baseline.call_count, 2)
+        self.assertEqual(repair_api.cache, {})
+        paths = list(self.records_dir.glob("*.json"))
+        self.assertEqual(len(paths), 4)
+        records = [json.loads(path.read_text(encoding="utf-8")) for path in paths]
+        self.assertCountEqual([record["method"] for record in records], ["sdg", "zero_shot"] * 2)
+        for record in records:
+            self.assertEqual(record["original_html"], self.html)
+            self.assertEqual(record["repair_run"]["fixed_html"], run.fixed_html)
+            self.assertEqual(record["violations_before"], self.violations)
+            self.assertIsNone(record["violations_after"])
+            self.assertIn("Axe crashed", record["scan_error"]["message"])
+            self.log.assert_any_call(f"[POST-REPAIR] Failed-run record saved: {record['record_id']}")
+
+    def test_repair_storage_failure_preserves_scan_error_and_reports_unsaved_record(self):
+        run = RepairRun(fixed_html=self.html, steps=[], unmapped=0)
+        self.run_sdg.return_value = run
+        self.run_baseline.return_value = run
+        with patch.object(repair_api, "save_failed_run", side_effect=OSError("Disk full")):
             for use_sdg in (True, False):
                 with self.subTest(use_sdg=use_sdg):
                     self.driver.execute_async_script.side_effect = [
@@ -175,13 +218,35 @@ class TestScanFailureHandling(unittest.TestCase):
                             repair_api.RepairRequest(html=self.html, use_sdg=use_sdg)
                         )
                     self.assertEqual(caught.exception.status_code, 503)
-                    self.assertIn("Post-repair", caught.exception.detail)
-                    self.assertIn("Axe crashed", caught.exception.detail)
-            evaluate.assert_not_called()
+                    self.assertEqual(caught.exception.detail, "Post-repair detection failed: Axe scan failed: Axe crashed")
+
+        self.log.assert_any_call("[POST-REPAIR] Failed-run record could not be saved: Disk full")
+        self.assertFalse(any("Failed-run record saved:" in args[0] for args, _ in self.log.call_args_list))
+        self.assertEqual(repair_api.cache, {})
+        self.assertFalse(self.records_dir.exists())
+
+    def test_successful_and_cached_repairs_do_not_save_failed_run_records(self):
+        run = RepairRun(fixed_html=self.html, steps=[], unmapped=0)
+        self.run_sdg.return_value = run
+        self.run_baseline.return_value = run
+        with patch.object(repair_api, "save_failed_run") as save:
+            for use_sdg in (True, False):
+                with self.subTest(use_sdg=use_sdg):
+                    self.driver.execute_async_script.side_effect = [
+                        {"violations": self.violations}, {"violations": []},
+                    ]
+                    request = repair_api.RepairRequest(html=self.html, use_sdg=use_sdg)
+                    response = repair_api.repair_html(request)
+                    cached = repair_api.repair_html(request)
+                    self.assertFalse(response.cache_hit)
+                    self.assertTrue(cached.cache_hit)
+                    self.assertEqual(response.fixed_html, self.html)
+                    self.assertEqual(response.issues_after, 0)
+            save.assert_not_called()
 
         self.run_sdg.assert_called_once()
         self.run_baseline.assert_called_once()
-        self.assertEqual(repair_api.cache, {})
+        self.assertFalse(self.records_dir.exists())
 
 
 if __name__ == "__main__":

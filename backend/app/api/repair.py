@@ -11,6 +11,7 @@ from app.services.detection.preprocess import (
     stash_non_essential,
     unstash_non_essential,
 )
+from app.services.repair.failed_runs import save_failed_run
 from app.services.repair.runner import run_baseline, run_sdg
 from app.services.validation.evaluator import evaluate_repair
 from app.services.repair.log_streamer import streamer
@@ -124,6 +125,19 @@ def repair_html(request: RepairRequest):
         violations_after = detect(run.fixed_html)
     except Exception as e:  # noqa: BLE001
         streamer.log(f"[POST-REPAIR] Post-repair detection failed: {e!s}")
+        try:
+            record_id = save_failed_run(
+                original_html=request.html,
+                evaluation_original_html=clean_html,
+                use_sdg=request.use_sdg,
+                violations_before=violations_before,
+                run=run,
+                error=e,
+            )
+        except Exception as storage_error:  # noqa: BLE001 - preserve the original scan error
+            streamer.log(f"[POST-REPAIR] Failed-run record could not be saved: {storage_error}")
+        else:
+            streamer.log(f"[POST-REPAIR] Failed-run record saved: {record_id}")
         raise HTTPException(
             status_code=503,
             detail=f"Post-repair detection failed: {e!s}",

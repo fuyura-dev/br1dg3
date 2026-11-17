@@ -75,8 +75,11 @@ Requests with no detected issues return without running a repair and are not cac
 and steps describe the original repair run, not new LLM usage for the current request.
 
 A failed initial or final scan returns HTTP 503 and does not cache a successful
-repair response. Retaining repair artifacts and usage after a failed final scan
-is still pending.
+repair response. When the final scan fails, the backend saves a local JSON record
+under `backend/data/failed_runs/` and logs its record ID. The HTTP status and error
+detail stay the same. If saving fails, the backend logs that storage error and
+still returns the original scan error. See [failed-run records](../services/repair/README.md#failed-final-scan-records)
+for the saved fields and scope.
 
 ---
 
