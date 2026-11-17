@@ -1,8 +1,8 @@
 **Project change log**
 
-Record each completed code change by date. Format:
+Record code changes and manuscript recommendations by date. Manuscript recommendations can have their own entry even when no code has changed. Group related updates and clearly distinguish proposed recommendations from completed implementation. Format:
 
-- **Code changed:** What changed and why.
+- **Code changed:** What changed and why, or **None** when no code was changed.
 - **Recommended manuscript change:** Mark **Required** when correcting an inaccurate manuscript claim, **Optional** when adding detail, or **None** when no recommendation applies. Include the affected section and suggested wording where applicable.
 - **Verification:** Checks performed and their results, including any checks not completed.
 
@@ -17,3 +17,9 @@ Record each completed code change by date. Format:
 - **Code changed:** `calculate_structural_preservation()` in `backend/app/services/validation/structure.py` now computes exact TED without subtree pruning for both repair approaches. The old pruning could count three deleted nodes as one and incorrectly mark a structure as preserved. Kept it in `calculate_legacy_pruned_structural_preservation()` for comparison. From `backend/`, run `python -m scripts.compare_ted original.html repaired.html` for unpruned results only; add `--compare-pruned` to show both metrics and their calculation times. Comparison is off by default and does not change API behavior. Use unpruned results for the main experiment.
 - **Recommended manuscript change:** **Optional.** The existing TED formula can remain. For reproducibility, in Chapter 3, **Structural Preservation**, after the paragraph defining the two DOM trees and TED, add: “TED is computed on complete ordered element trees after script and style removal, without subtree pruning. Nodes are labeled by tag name, with unit insertion, deletion, and rename costs; text, attributes, and comments are excluded. The same unpruned metric is used for both repair approaches.” The baseline paper mentions DOM similarity and a 0.85 threshold but does not establish whether its implementation used pruning; do not describe this as a verified reproduction of its algorithm.
 - **Verification:** All 12 structural and comparison tests passed, including repeated-subtree insertion/deletion and comparison on/off behavior. In the deletion example, unpruned TED is 3 (similarity 0.7857, not preserved), while legacy TED is 1 (0.9286, preserved). Ruff checks and `git diff --check` passed. No browser or LLM calls were made; runtime on the experimental dataset has not been benchmarked.
+
+**2026-11-17 — Scan failures cannot count as clean results (#4, first part)**
+
+- **Code changed:** Detection now rejects Axe errors and missing or malformed results instead of returning zero violations. Evaluation stops when the initial scan fails (HTTP 503); disabling detection without supplying `violations_before` returns HTTP 422. Successful empty scans remain valid. A failed final scan still receives no effectiveness credit through `/evaluate`, while `/repair` returns HTTP 503 and does not cache success. Documented these behaviors. Retaining failed-run artifacts and costs remains pending under #4.
+- **Recommended manuscript change:** **Optional.** The existing no-credit rule for failed final scans remains applicable. For clarity, in Chapter 3, **Data Generation/Gathering Procedure → Phase 1 — Dataset Preparation**, after the sentence about recording the pre-repair violation count, add: “A successful pre-repair scan is required to establish the starting violation count. Scan errors are not interpreted as zero detected violations.”
+- **Verification:** All 33 targeted tests passed: 18 new detection/failure tests and 15 existing cache/effectiveness tests. Route handlers were called directly with mocked WebDriver and repair generation; no live browser or LLM calls were made. Ruff checks on the five affected Python files and `git diff --check` passed. The full test suite was not run.

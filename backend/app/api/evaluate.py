@@ -1,9 +1,10 @@
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.services.validation.evaluator import evaluate_repair
+from app.services.detection.detect import DetectionError
+from app.services.validation.evaluator import MissingInitialScanError, evaluate_repair
 
 router = APIRouter()
 
@@ -28,13 +29,18 @@ class EvaluateResponse(BaseModel):
 
 @router.post("/evaluate", response_model=EvaluateResponse)
 def evaluate_document_repair(request: EvaluateRequest):
-    report = evaluate_repair(
-        html_original=request.html_original,
-        html_repaired=request.html_repaired,
-        violations_before=request.violations_before,
-        violations_after=request.violations_after,
-        efficiency_data=request.efficiency_data,
-        structure_threshold=request.structure_threshold,
-        run_detection_if_missing=request.run_detection_if_missing,
-    )
+    try:
+        report = evaluate_repair(
+            html_original=request.html_original,
+            html_repaired=request.html_repaired,
+            violations_before=request.violations_before,
+            violations_after=request.violations_after,
+            efficiency_data=request.efficiency_data,
+            structure_threshold=request.structure_threshold,
+            run_detection_if_missing=request.run_detection_if_missing,
+        )
+    except MissingInitialScanError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except DetectionError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return EvaluateResponse(**report.to_dict())

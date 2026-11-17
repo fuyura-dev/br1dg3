@@ -1,5 +1,7 @@
-
 import json
+import logging
+import socket
+import urllib.parse
 from pathlib import Path
 
 from selenium import webdriver
@@ -13,7 +15,7 @@ options.add_argument("--disable-gpu")
 options.add_argument("--no-sandbox")
 options.add_argument("--headless=new")
 
-AXE_SCRIPT = (Path(__file__).parent / 'axe.min.js').read_text()
+AXE_SCRIPT = (Path(__file__).parent / "axe.min.js").read_text()
 
 RELEVANT_RULES = (
     "aria-allowed-attr",
@@ -58,14 +60,14 @@ RELEVANT_RULES = (
     "region",
 )
 
-import logging
-import socket
-import urllib.parse
-
 logger = logging.getLogger(__name__)
 
 options.add_argument("--disable-dev-shm-usage")
 options.add_argument("--disable-extensions")
+
+
+class DetectionError(RuntimeError):
+    """The accessibility scan did not produce a usable Axe result."""
 
 
 def _is_remote_driver_reachable(url: str, timeout: float = 2.0) -> bool:
@@ -87,7 +89,7 @@ def _get_driver():
         if _is_remote_driver_reachable(settings.REMOTE_DRIVER_URL, timeout=2.0):
             try:
                 return webdriver.Remote(settings.REMOTE_DRIVER_URL, options=options)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - retain local-driver fallback
                 logger.warning(
                     f"Failed to connect to REMOTE_DRIVER_URL {settings.REMOTE_DRIVER_URL}: {e}. "
                     "Attempting local Chrome."
@@ -107,7 +109,8 @@ def _get_driver():
         ) from e
 
 
-def detect(html: str):
+def detect(html: str) -> list[dict]:
+    """Return selected-rule violations; raise on scan errors or malformed results."""
     html = preprocess(html)
     driver = None
     try:
@@ -115,7 +118,7 @@ def detect(html: str):
         driver.set_page_load_timeout(10)
         driver.set_script_timeout(15)
 
-        driver.get('data:text/html,')
+        driver.get("data:text/html,")
         driver.execute_script(
             """
             const parser = new DOMParser();
@@ -137,33 +140,52 @@ def detect(html: str):
         )
         driver.execute_script(AXE_SCRIPT)
 
-        raw_res = driver.execute_async_script(
-            """
+        raw_res = driver.execute_async_script("""
             try {
                 axe.run({}, (err, results) => {
                     if (err) {
-                        arguments[0]({ error: String(err), violations: [] });
+                        arguments[0]({ error: String(err) });
                     } else {
-                        arguments[0](results || { violations: [] });
+                        arguments[0](results || null);
                     }
                 });
             } catch (e) {
-                arguments[0]({ error: String(e), violations: [] });
+                arguments[0]({ error: String(e) });
             }
-            """
-        )
-        violations = (raw_res or {}).get('violations', []) if isinstance(raw_res, dict) else []
+            """)
+        if not isinstance(raw_res, dict):
+            raise DetectionError("Axe scan returned no result object.")
+        if "error" in raw_res:
+            raise DetectionError(f"Axe scan failed: {raw_res['error']}")
 
-        return list(filter(lambda v: v.get('id') in RELEVANT_RULES, violations))
+        violations = raw_res.get("violations")
+        if not isinstance(violations, list):
+            raise DetectionError(
+                "Axe scan returned a missing or invalid violations list."
+            )
+        for violation in violations:
+            if (
+                not isinstance(violation, dict)
+                or not isinstance(violation.get("id"), str)
+                or not violation["id"].strip()
+                or not isinstance(violation.get("nodes"), list)
+                or not violation["nodes"]
+                or any(not isinstance(node, dict) for node in violation["nodes"])
+            ):
+                raise DetectionError("Axe scan returned a malformed violation record.")
+
+        return list(filter(lambda v: v.get("id") in RELEVANT_RULES, violations))
     finally:
         if driver:
             try:
                 driver.quit()
-            except Exception:
+            except (
+                Exception
+            ):  # noqa: BLE001, S110 - cleanup must not hide the scan error
                 pass
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     HTML = """
 <!DOCTYPE html>
 <html>

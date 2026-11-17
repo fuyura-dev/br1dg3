@@ -9,6 +9,9 @@
 ## 1. Scan Endpoint (`POST /api/scan`)
 Scans HTML content for accessibility violations.
 
+A failed scan returns HTTP 503. Axe errors and missing or malformed scan results
+are failures, not successful scans with zero violations.
+
 ### Request Body
 ```json
 {
@@ -71,6 +74,10 @@ Requests with no detected issues return without running a repair and are not cac
 `cache_hit` is `true` only when a stored response is reused. Its summary, metrics,
 and steps describe the original repair run, not new LLM usage for the current request.
 
+A failed initial or final scan returns HTTP 503 and does not cache a successful
+repair response. Retaining repair artifacts and usage after a failed final scan
+is still pending.
+
 ---
 
 ## 3. Graph Endpoint (`POST /api/graph`)
@@ -120,3 +127,37 @@ Extracts the Semantic Dependency Graph (SDG) for visual rendering.
   ]
 }
 ```
+
+---
+
+## 4. Evaluation Endpoint (`POST /api/evaluate`)
+
+Evaluates existing original and repaired HTML without generating another repair.
+
+```json
+{
+  "html_original": "<html><body><img src='logo.png'></body></html>",
+  "html_repaired": "<html><body><img src='logo.png' alt='Company Logo'></body></html>",
+  "run_detection_if_missing": true
+}
+```
+
+Omitted scan results are detected automatically by default. To use saved results,
+provide `violations_before` and `violations_after` as Axe violation lists. An
+explicit empty list means a successful scan found no selected-rule violations;
+an omitted or null value means the result is unavailable.
+
+- If the initial scan fails, evaluation returns HTTP 503; it does not invent a
+  starting count of zero.
+- If `run_detection_if_missing` is `false`, `violations_before` is required.
+  Omitting it or sending null returns HTTP 422. An explicit empty list is allowed.
+- With a valid starting scan, a failed final scan (or an unavailable final result
+  when detection is disabled) keeps the existing no-credit effectiveness result:
+  `scan_failed: true`, `violations_after` equal to `violations_before`, zero
+  reduction, and both `compliance_improved` and `fully_fixed` false. This after
+  count is a policy assignment, not an observed measurement. The other metrics
+  are still evaluated independently.
+
+Successful evaluation returns `effectiveness`, `safety`, `structure`, `efficiency`,
+and `semantic`. Unlike `/api/evaluate`, `/api/repair` still returns HTTP 503 when
+its final scan fails, as described above.

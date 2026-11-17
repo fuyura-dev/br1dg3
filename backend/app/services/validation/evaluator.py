@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
-from app.services.detection.detect import detect
+from app.services.detection.detect import DetectionError, detect
 from app.services.validation.effectiveness import (
     EffectivenessResult,
     calculate_effectiveness,
@@ -21,6 +21,10 @@ from app.services.validation.structure import (
     calculate_structural_preservation,
 )
 from app.services.repair.log_streamer import streamer
+
+
+class MissingInitialScanError(ValueError):
+    """No pre-repair scan was supplied and automatic detection is disabled."""
 
 
 @dataclass
@@ -56,22 +60,31 @@ def evaluate_repair(
     """Evaluate a single HTML document repair across the 5 thesis metrics defined in Chapter 3."""
     # 1. Detection (if violations not pre-computed)
     scan_failed = False
-    if violations_before is None and run_detection_if_missing:
+    if violations_before is None:
+        if not run_detection_if_missing:
+            raise MissingInitialScanError(
+                "violations_before is required when run_detection_if_missing is false."
+            )
         try:
             violations_before = detect(html_original)
-        except Exception:  # noqa: BLE001
-            violations_before = []
+        except Exception as exc:
+            raise DetectionError(
+                f"Pre-repair accessibility detection failed: {exc}"
+            ) from exc
 
     if violations_after is None and run_detection_if_missing:
         try:
             violations_after = detect(html_repaired)
-        except Exception:  # noqa: BLE001
+        except (
+            Exception
+        ) as exc:  # noqa: BLE001 - any failed final scan receives no credit
+            streamer.log(f"[EVALUATION] Post-repair detection failed: {exc}")
             scan_failed = True
             violations_after = None
 
     # 1. Metric 1: Repair Effectiveness
     effectiveness = calculate_effectiveness(
-        violations_before=violations_before or [],
+        violations_before=violations_before,
         violations_after=violations_after,
         scan_failed=scan_failed,
     )
@@ -83,7 +96,9 @@ def evaluate_repair(
     # 2. Metric 2: Repair Safety (Syntactic Validity)
     safety = calculate_safety(html_repaired)
     status_str = "Valid" if safety.is_valid else f"Invalid ({safety.reason})"
-    streamer.log(f"[METRICS] 2/5 Safety: Syntactic {status_str} ({safety.element_count} elements)")
+    streamer.log(
+        f"[METRICS] 2/5 Safety: Syntactic {status_str} ({safety.element_count} elements)"
+    )
 
     # 3. Metric 3: Structural Preservation
     structure = calculate_structural_preservation(
