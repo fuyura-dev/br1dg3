@@ -2,13 +2,17 @@ import json
 import logging
 import socket
 import urllib.parse
+from copy import deepcopy
+from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
+from typing import Any
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 
 from app.config import settings
-from app.services.detection.preprocess import preprocess
+from app.services.detection.preprocess import NON_ESSENTIAL, preprocess
 
 options = Options()
 options.add_argument("--disable-gpu")
@@ -26,7 +30,6 @@ RELEVANT_RULES = (
     "aria-required-children",
     "aria-required-parent",
     "aria-roles",
-    "aria-tab-name",
     "aria-toggle-field-name",
     "aria-valid-attr",
     "aria-valid-attr-value",
@@ -70,6 +73,14 @@ class DetectionError(RuntimeError):
     """The accessibility scan did not produce a usable Axe result."""
 
 
+@dataclass
+class ScanResult:
+    """Selected repair inputs and the untouched Axe report from the same scan."""
+
+    violations: list[dict]
+    report: dict[str, Any]
+
+
 def _is_remote_driver_reachable(url: str, timeout: float = 2.0) -> bool:
     """Quickly check if the remote webdriver host:port is accepting connections."""
     try:
@@ -109,8 +120,8 @@ def _get_driver():
         ) from e
 
 
-def detect(html: str) -> list[dict]:
-    """Return selected-rule violations; raise on scan errors or malformed results."""
+def scan_with_report(html: str) -> ScanResult:
+    """Run Axe once, retaining its report and separate selected-rule violations."""
     html = preprocess(html)
     driver = None
     try:
@@ -174,15 +185,27 @@ def detect(html: str) -> list[dict]:
             ):
                 raise DetectionError("Axe scan returned a malformed violation record.")
 
-        return list(filter(lambda v: v.get("id") in RELEVANT_RULES, violations))
+        return ScanResult(
+            # Repair code may annotate its inputs; preserve the scan evidence.
+            violations=deepcopy([v for v in violations if v["id"] in RELEVANT_RULES]),
+            report={
+                "selected_rule_ids": list(RELEVANT_RULES),
+                "prepared_html_sha256": sha256(html.encode("utf-8")).hexdigest(),
+                "removed_elements": list(NON_ESSENTIAL),
+                "axe": raw_res,
+            },
+        )
     finally:
         if driver:
             try:
                 driver.quit()
-            except (
-                Exception
-            ):  # noqa: BLE001, S110 - cleanup must not hide the scan error
+            except Exception:  # noqa: BLE001, S110 - cleanup must not hide the scan error
                 pass
+
+
+def detect(html: str) -> list[dict]:
+    """Compatibility interface for callers needing only selected-rule violations."""
+    return scan_with_report(html).violations
 
 
 if __name__ == "__main__":

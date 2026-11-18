@@ -6,15 +6,15 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.services.detection.detect import detect
+from app.services.detection.detect import scan_with_report
 from app.services.detection.preprocess import (
     stash_non_essential,
     unstash_non_essential,
 )
 from app.services.repair.failed_runs import save_failed_run
+from app.services.repair.log_streamer import streamer
 from app.services.repair.runner import run_baseline, run_sdg
 from app.services.validation.evaluator import evaluate_repair
-from app.services.repair.log_streamer import streamer
 
 router = APIRouter()
 
@@ -42,6 +42,7 @@ class RepairResponse(BaseModel):
     summary: str
     metrics: dict[str, Any] | None = None
     steps: list[dict[str, Any]] | None = None
+    scan_reports: dict[str, Any] = Field(default_factory=lambda: {"before": None, "after": None})
     cache_hit: bool = Field(
         default=False,
         description="True when reusing a cached response; metrics describe the original repair run.",
@@ -107,7 +108,8 @@ def repair_html(request: RepairRequest):
 
     clean_html, stashed_assets = stash_non_essential(request.html)
     try:
-        violations_before = detect(clean_html)
+        scan_before = scan_with_report(clean_html)
+        violations_before = scan_before.violations
     except Exception as e:  # noqa: BLE001
         raise HTTPException(
             status_code=503,
@@ -119,8 +121,9 @@ def repair_html(request: RepairRequest):
     if not violations_before:
         return RepairResponse(
             fixed_html=request.html, issues_before=0, issues_after=0, issues_fixed=0,
-            summary="No accessibility issues detected.",
+            summary="No confirmed selected-rule violations detected.",
             steps=[],
+            scan_reports={"before": scan_before.report, "after": None},
             generation={"status": "not_needed", "candidate_available": False,
                         "fallback_used": False, "failed_steps": 0, "unmapped": 0},
         )
@@ -132,7 +135,8 @@ def repair_html(request: RepairRequest):
     streamer.log("[POST-REPAIR] Running post-repair Axe accessibility scan on fixed HTML...")
 
     try:
-        violations_after = detect(run.fixed_html)
+        scan_after = scan_with_report(run.fixed_html)
+        violations_after = scan_after.violations
     except Exception as e:  # noqa: BLE001
         streamer.log(f"[POST-REPAIR] Post-repair detection failed: {e!s}")
         try:
@@ -143,6 +147,7 @@ def repair_html(request: RepairRequest):
                 violations_before=violations_before,
                 run=run,
                 error=e,
+                scan_report_before=scan_before.report,
             )
         except Exception as storage_error:  # noqa: BLE001 - preserve the original scan error
             streamer.log(f"[POST-REPAIR] Failed-run record could not be saved: {storage_error}")
@@ -168,6 +173,10 @@ def repair_html(request: RepairRequest):
     streamer.log("[DONE] Evaluation metrics computed successfully. Repair complete!")
 
     repaired_html = unstash_non_essential(run.fixed_html, stashed_assets)
+    metrics = metrics_report.to_dict()
+    # Reports are exposed once at the response level. Evaluation received the
+    # already selected lists, so it did not generate its own scan reports.
+    metrics.pop("scan_reports", None)
 
     response = RepairResponse(
         fixed_html=repaired_html,
@@ -177,7 +186,8 @@ def repair_html(request: RepairRequest):
         issues_after=issues_after,
         issues_fixed=issues_before - issues_after,
         summary=_summarize(request, run, issues_before, issues_after),
-        metrics=metrics_report.to_dict(),
+        metrics=metrics,
+        scan_reports={"before": scan_before.report, "after": scan_after.report},
         steps=_serialize_steps(run),
     )
     if cache_key is not None:

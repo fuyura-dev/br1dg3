@@ -192,7 +192,7 @@ function mapMetricsToCards(metricsDict, issuesBefore, issuesAfter) {
   const isFullyFixed = Boolean(eff.fully_fixed ?? (issuesAfter === 0));
   const isImproved = Boolean(eff.compliance_improved ?? (issuesAfter < issuesBefore));
   const effectivenessStatus = isFullyFixed
-    ? { label: "Fully Fixed", tone: "success" }
+    ? { label: "Fully Fixed (Selected Rules)", tone: "success" }
     : isImproved
     ? { label: "Improved", tone: "accent" }
     : { label: "No Change", tone: "warning" };
@@ -268,7 +268,7 @@ function mapMetricsToCards(metricsDict, issuesBefore, issuesAfter) {
       label: "Repair Effectiveness",
       score: vrScore,
       status: effectivenessStatus,
-      detail: `${violationsReduced} of ${totalBefore} violations reduced (${totalAfter} remaining)`,
+      detail: `${violationsReduced} of ${totalBefore} selected-rule violations reduced (${totalAfter} confirmed remaining). Results needing review are separate from this count.`,
     },
     {
       id: "safety",

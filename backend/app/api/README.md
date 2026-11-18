@@ -4,10 +4,13 @@
 > For the updated request and response schemas, refer to the interactive API documentation when the backend is running:
 > - **Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
 > - **ReDoc**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
-> docs below are not updated
+> Examples below show selected fields; use the interactive schemas for complete responses.
 
 ## 1. Scan Endpoint (`POST /api/scan`)
-Scans HTML content for accessibility violations.
+Scans prepared HTML for accessibility violations. The existing `total_issues`
+and `issues` fields cover the 39 selected rules shared by both repair methods.
+The [detection documentation](../services/detection/README.md) lists each rule,
+its WCAG/best-practice classification, and the snapshot's limitations.
 
 A failed scan returns HTTP 503. Axe errors and missing or malformed scan results
 are failures, not successful scans with zero violations.
@@ -39,6 +42,14 @@ are failures, not successful scans with zero violations.
 ```
 
 ---
+
+Successful `/scan` responses also include `scan_report`. It retains the complete
+result of the same Axe run, including unselected violations, passes, incomplete
+(needs-review) and inapplicable results, plus the engine/browser information
+provided by Axe. The envelope records `selected_rule_ids`,
+`prepared_html_sha256`, `removed_elements`, and the unfiltered `axe` result.
+The hash identifies the preprocessed HTML input, not the resulting browser DOM.
+No second scan is performed.
 
 ## 2. Repair Endpoint (`POST /api/repair`)
 Repairs accessibility violations in the given HTML.
@@ -73,6 +84,21 @@ Requests with no detected issues return without running a repair and are not cac
 
 `cache_hit` is `true` only when a stored response is reused. Its summary, metrics,
 and steps describe the original repair run, not new LLM usage for the current request.
+
+Responses include `scan_reports.before` and `scan_reports.after`, using the same
+report envelope as `/scan`. They are at the response level, not duplicated inside
+`metrics`. Cache hits return the original run's reports. When no selected-rule
+violations are found, the initial report is retained, `after` is null, and no
+repair or final scan runs. Excluded violations and review items may still exist.
+`fully_fixed` means zero confirmed selected-rule violations on the evaluated
+snapshot, subject to the existing failure policy; it does not establish complete
+accessibility. Report retention changes neither the selected repair inputs nor
+the primary metric formulas.
+
+For a generation fallback, the after-report describes the fallback actually
+scanned. The metrics remain labeled no-candidate policy scores. Successful
+reports are returned and cached, not automatically archived to disk. Full
+reports increase response/cache sizes but require no extra browser or LLM calls.
 
 Responses also include `candidate_html` (the accepted assembled HTML before
 script/style restoration, or null) and `generation` with `status`,
@@ -186,7 +212,13 @@ accepted or partial run, pass its prepared `candidate_html` as `html_repaired`.
 Identical original/repaired HTML alone never implies generation failure.
 
 Successful evaluation returns `effectiveness`, `safety`, `structure`, `efficiency`,
-`semantic`, and `evaluation` (artifact, score basis, and fallback flag).
+`semantic`, `evaluation` (artifact, score basis, and fallback flag), and
+`scan_reports` with `before`/`after` entries for scans it actually performed.
+Caller-supplied violation lists must already use the selected-rule scope. Their
+full reports remain null: the API does not reconstruct them from filtered lists
+or rescan solely to obtain a report. A failed or skipped final scan also has a
+null report. Any successful initial report remains available when the final
+scan fails and effectiveness receives no credit.
 Safety uses html5lib 1.1 parsing errors. Its response includes parser/version,
 document or fragment mode, error count, and error messages with line/column
 positions. Document markup in either original or repaired HTML selects document

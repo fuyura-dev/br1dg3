@@ -6,7 +6,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 if TYPE_CHECKING:
@@ -24,6 +24,7 @@ def save_failed_run(
     violations_before: list[dict],
     run: "RepairRun",
     error: Exception,
+    scan_report_before: dict[str, Any] | None = None,
 ) -> str:
     """Persist existing run data, returning its ID only after a complete write.
 
@@ -33,7 +34,7 @@ def save_failed_run(
     """
     record_id = uuid4().hex
     record = {
-        "schema_version": 1,
+        "schema_version": 2,
         "record_id": record_id,
         "recorded_at": datetime.now(timezone.utc).isoformat(),
         "failure_stage": "post_repair_scan",
@@ -42,6 +43,7 @@ def save_failed_run(
         "evaluation_original_html": evaluation_original_html,
         "violations_before": violations_before,
         "violations_after": None,
+        "scan_reports": {"before": scan_report_before, "after": None},
         "scan_error": {"type": type(error).__name__, "message": str(error)},
         "repair_run": asdict(run),
     }

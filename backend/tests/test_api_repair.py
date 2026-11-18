@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import call, patch
 
+from app.services.detection.detect import ScanResult
+
 # Route tests do not need LLM credentials or a real client.
 with patch("google.genai.Client"):
     from app.api import repair as repair_api
@@ -15,7 +17,7 @@ class TestRepairCaching(unittest.TestCase):
             + '.png"></body></html>'
         )
         self.violations = [{"id": "image-alt", "nodes": [{"target": ["img"]}]}]
-        self.detect = self.enterContext(patch.object(repair_api, "detect"))
+        self.detect = self.enterContext(patch.object(repair_api, "scan_with_report"))
         self.run_sdg = self.enterContext(patch.object(repair_api, "run_sdg"))
         self.run_baseline = self.enterContext(patch.object(repair_api, "run_baseline"))
         self.evaluate = self.enterContext(patch.object(repair_api, "evaluate_repair"))
@@ -37,7 +39,10 @@ class TestRepairCaching(unittest.TestCase):
         self.run_baseline.side_effect = [
             run for use_sdg, run in zip(methods, runs) if not use_sdg
         ]
-        self.detect.side_effect = [self.violations, [], self.violations, []]
+        self.detect.side_effect = [
+            ScanResult(violations, {"axe": {"violations": violations}})
+            for violations in (self.violations, [], self.violations, [])
+        ]
         metrics = [{"run": 1}, {"run": 2}]
         self.evaluate.return_value.to_dict.side_effect = metrics
         return runs, metrics
@@ -185,7 +190,7 @@ class TestRepairCaching(unittest.TestCase):
         self.assertEqual(self.run_sdg.call_count, 2)
 
     def test_no_violations_skips_repair_for_both_methods(self):
-        self.detect.return_value = []
+        self.detect.return_value = ScanResult([], {"axe": {"violations": []}})
         for use_sdg in (True, False):
             with self.subTest(use_sdg=use_sdg):
                 response = repair_api.repair_html(

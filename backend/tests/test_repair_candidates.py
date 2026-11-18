@@ -3,6 +3,7 @@ from dataclasses import asdict
 from unittest.mock import patch
 
 from app.api import evaluate as evaluate_api
+from app.services.detection.detect import ScanResult
 from app.services.validation.evaluator import MissingInitialScanError, evaluate_repair
 
 with patch("google.genai.Client"):
@@ -43,6 +44,9 @@ class TestRepairCandidates(unittest.TestCase):
             violations_before=self.violations, violations_after=[],
             repair_run=run, run_detection_if_missing=False, **kwargs,
         )
+
+    def _scan_results(self):
+        return [ScanResult(v, {"axe": {"violations": v}}) for v in (self.violations, [])]
 
     def _assert_no_credit(self, report):
         self.assertEqual(report.evaluation["score_basis"], "no_candidate_failure_policy")
@@ -235,7 +239,7 @@ class TestRepairCandidates(unittest.TestCase):
         self.assertEqual(saved["steps"][0]["llm"]["text"], "not HTML")
 
     def test_evaluate_api_accepts_explicit_fallback_status_for_saved_runs(self):
-        with patch("app.services.validation.evaluator.detect") as detect:
+        with patch("app.services.validation.evaluator.scan_with_report") as detect:
             response = evaluate_api.evaluate_document_repair(evaluate_api.EvaluateRequest(
                 html_original=self.html, html_repaired=self.html,
                 violations_before=self.violations, fallback_used=True,
@@ -284,7 +288,7 @@ class TestRepairCandidates(unittest.TestCase):
             with self.subTest(use_sdg=use_sdg):
                 self.generate.return_value = self._reply(raw_reply)
                 self.generate.reset_mock()
-                with patch.object(repair_api, "detect", side_effect=[self.violations, []]) as detect:
+                with patch.object(repair_api, "scan_with_report", side_effect=self._scan_results()) as detect:
                     request = repair_api.RepairRequest(html=self.html, use_sdg=use_sdg)
                     response = repair_api.repair_html(request)
                     cached = repair_api.repair_html(request)
@@ -306,7 +310,7 @@ class TestRepairCandidates(unittest.TestCase):
         self.generate.return_value = self._reply(
             self.html.replace('<img id="photo"', '<img alt="Photo" id="photo"')
         )
-        with patch.object(repair_api, "detect", side_effect=[self.violations, []]):
+        with patch.object(repair_api, "scan_with_report", side_effect=self._scan_results()):
             response = repair_api.repair_html(repair_api.RepairRequest(
                 html=html, use_sdg=False, use_cache=False,
             ))

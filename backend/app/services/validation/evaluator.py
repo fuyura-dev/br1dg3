@@ -1,7 +1,7 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any
 
-from app.services.detection.detect import DetectionError, detect
+from app.services.detection.detect import DetectionError, scan_with_report
 from app.services.validation.effectiveness import (
     EffectivenessResult,
     calculate_effectiveness,
@@ -39,6 +39,7 @@ class EvaluationReport:
     efficiency: EfficiencyResult
     semantic: SemanticResult
     evaluation: dict[str, Any]
+    scan_reports: dict[str, Any] = field(default_factory=lambda: {"before": None, "after": None})
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -48,6 +49,7 @@ class EvaluationReport:
             "efficiency": self.efficiency.to_dict(),
             "semantic": self.semantic.to_dict(),
             "evaluation": self.evaluation,
+            "scan_reports": self.scan_reports,
         }
 
 
@@ -75,6 +77,7 @@ def evaluate_repair(
     if repair_run is not None and not fallback_used:
         evaluation["artifact"] = "candidate" if repair_run.candidate_html is not None else "unchanged_input"
     # 1. Detection (if violations not pre-computed)
+    scan_reports = {"before": None, "after": None}
     scan_failed = False
     if violations_before is None:
         if not run_detection_if_missing:
@@ -82,7 +85,9 @@ def evaluate_repair(
                 "violations_before is required when run_detection_if_missing is false."
             )
         try:
-            violations_before = detect(html_original)
+            scan_before = scan_with_report(html_original)
+            violations_before = scan_before.violations
+            scan_reports["before"] = scan_before.report
         except Exception as exc:
             raise DetectionError(
                 f"Pre-repair accessibility detection failed: {exc}"
@@ -90,7 +95,9 @@ def evaluate_repair(
 
     if violations_after is None and run_detection_if_missing and not fallback_used:
         try:
-            violations_after = detect(html_repaired)
+            scan_after = scan_with_report(html_repaired)
+            violations_after = scan_after.violations
+            scan_reports["after"] = scan_after.report
         except Exception as exc:  # noqa: BLE001 - any failed final scan receives no credit
             streamer.log(f"[EVALUATION] Post-repair detection failed: {exc}")
             scan_failed = True
@@ -187,4 +194,5 @@ def evaluate_repair(
         efficiency=efficiency,
         semantic=semantic,
         evaluation=evaluation,
+        scan_reports=scan_reports,
     )

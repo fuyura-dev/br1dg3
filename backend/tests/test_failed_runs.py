@@ -62,7 +62,7 @@ class TestFailedRunRecords(unittest.TestCase):
         record = json.loads((self.records_dir / f"{record_id}.json").read_text(encoding="utf-8"))
 
         self.assertEqual(UUID(record_id).hex, record_id)
-        self.assertEqual(record["schema_version"], 1)
+        self.assertEqual(record["schema_version"], 2)
         self.assertEqual(record["record_id"], record_id)
         self.assertEqual(datetime.fromisoformat(record["recorded_at"]).utcoffset(), timedelta(0))
         self.assertEqual(record["method"], "sdg")
@@ -71,6 +71,7 @@ class TestFailedRunRecords(unittest.TestCase):
         self.assertEqual(record["evaluation_original_html"], self.prepared)
         self.assertEqual(record["violations_before"], self.violations)
         self.assertIsNone(record["violations_after"])
+        self.assertEqual(record["scan_reports"], {"before": None, "after": None})
         self.assertEqual(record["scan_error"], {"type": "RuntimeError", "message": "Final scan failed"})
         self.assertEqual(record["repair_run"], original_run)
         self.assertEqual(record["repair_run"]["steps"][0]["llm"]["text"], self.run.steps[0].llm.text)

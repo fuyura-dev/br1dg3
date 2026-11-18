@@ -57,6 +57,22 @@ does not measure raw LLM-generation syntax. Standalone `/evaluate` checks the
 supplied `html_repaired`, using `html_original` to establish document context.
 Use saved prepared candidates and matching originals when replaying runs.
 
+## Accessibility evaluation scope
+
+Automatic scans use the 39 selected Axe 4.10.3 rules documented in the
+[detection inventory](../detection/README.md). Both repair methods use the same
+list. `fully_fixed` means no confirmed selected-rule violations remain on the
+evaluated snapshot, subject to the existing scan/generation failure policy.
+Excluded violations and results needing review can still exist.
+
+`EvaluationReport.scan_reports` retains complete before/after reports when the
+evaluator performs those scans. Entries are null when only precomputed violation
+lists were supplied, a scan was skipped, or a scan failed. Precomputed lists must
+already use the selected-rule scope; no extra scan is performed to reconstruct
+missing evidence. `/repair` returns the reports from its own scans at the response
+level. The four Axe outcome arrays remain separate; only selected confirmed
+violations enter effectiveness. Metric formulas and count granularity are unchanged.
+
 ## Candidate and fallback scoring
 
 When a `RepairRun` is supplied, evaluation uses its accepted assembled candidate.

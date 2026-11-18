@@ -49,6 +49,10 @@ the complete JSON file has been written. The record contains:
   and styles stashed as placeholders by the repair API.
 - The selected-rule `violations_before`, and `violations_after: null` because the
   final scan did not supply a measurement.
+- `scan_reports.before`: the complete initial scan report, including unselected
+  violations and review items. `scan_reports.after` is null because the final
+  scan failed. These fields are available in schema version 2; old records are
+  not rewritten. Direct callers that have only violation lists leave reports null.
 - The scan error's type and message.
 - `repair_run`: output and candidate HTML, generation/fallback status,
   unmapped-target count, and complete step records.

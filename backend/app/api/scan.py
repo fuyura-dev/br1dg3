@@ -1,7 +1,9 @@
+from typing import Any
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.services.detection.detect import detect
+from app.services.detection.detect import scan_with_report
 
 router = APIRouter()
 
@@ -24,18 +26,20 @@ class ScanRequest(BaseModel):
 class ScanResponse(BaseModel):
     total_issues: int
     issues: list[Issue]
+    scan_report: dict[str, Any]
 
 
 @router.post("/scan", response_model=ScanResponse)
 def scan_html(request: ScanRequest):
     print(f"\n[SCAN] Received scan request from extension ({len(request.html)} characters)")
     try:
-        violations = detect(request.html)
-    except Exception as e:
+        scan = scan_with_report(request.html)
+        violations = scan.violations
+    except Exception as e:  # noqa: BLE001 - browser and Axe failures retain HTTP 503
         print(f"[SCAN] Detection failed: {e}")
         raise HTTPException(
             status_code=503,
-            detail=f"Accessibility detection failed: {str(e)}",
+            detail=f"Accessibility detection failed: {e!s}",
         )
 
     issues: list[Issue] = []
@@ -56,6 +60,6 @@ def scan_html(request: ScanRequest):
             )
 
     print(f"[SCAN] Detection completed: Found {len(issues)} violations across {len(violations)} rules.")
-    return ScanResponse(total_issues=len(issues), issues=issues)
+    return ScanResponse(total_issues=len(issues), issues=issues, scan_report=scan.report)
 
 

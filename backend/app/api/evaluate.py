@@ -30,6 +30,7 @@ class EvaluateResponse(BaseModel):
     efficiency: dict[str, Any]
     semantic: dict[str, Any]
     evaluation: dict[str, Any]
+    scan_reports: dict[str, Any]
 
 
 @router.post("/evaluate", response_model=EvaluateResponse)
