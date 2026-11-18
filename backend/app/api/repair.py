@@ -32,6 +32,10 @@ class RepairRequest(BaseModel):
 
 class RepairResponse(BaseModel):
     fixed_html: str
+    candidate_html: str | None = Field(
+        default=None, description="Accepted assembled candidate before script/style restoration; null if none.",
+    )
+    generation: dict[str, Any] | None = None
     issues_before: int
     issues_after: int
     issues_fixed: int           # issues_before - issues_after (can be negative if repair regresses)
@@ -55,10 +59,12 @@ def _summarize(request: "RepairRequest", run, issues_before: int, issues_after: 
         f"[{run.prompt_tokens} input, {run.completion_tokens} output, {run.thought_tokens} thought]"
     )
     tail = f"{issues_before} -> {issues_after} issues ({run.api_calls} API calls, {tokens_detail})"
+    if run.fallback_used:
+        return f"No accepted repair candidate; fallback HTML returned. {run.failed_steps} failed steps, {run.unmapped} unmapped, {tail}."
     if request.use_sdg:
         applied = sum(1 for s in run.steps if s.status == "applied")
         cascaded = sum(1 for s in run.steps if s.status == "cascade_resolved")
-        return f"SDG repair: {applied} patched, {cascaded} cascaded, {len(run.steps)} total elements, {run.unmapped} unmapped, {tail}."
+        return f"SDG repair ({run.generation_status}): {applied} patched, {cascaded} cascaded, {run.failed_steps} failed, {len(run.steps)} total elements, {run.unmapped} unmapped, {tail}."
     step = run.steps[0] if run.steps else None
     return f"Baseline repair: {step.status if step else 'no_violations'}, {tail}."
 
@@ -73,6 +79,8 @@ def _serialize_steps(run) -> list[dict[str, Any]]:
             "rules": s.rules,
             "status": s.status,
             "repaired_html": s.llm.text.strip() if s.llm and s.llm.text else None,
+            "raw_reply": s.llm.text if s.llm is not None else None,
+            "candidate_html": s.candidate_html,
             "related_relationships": s.related_relationships,
             "warnings": s.warnings,
             "error": s.error,
@@ -113,6 +121,8 @@ def repair_html(request: RepairRequest):
             fixed_html=request.html, issues_before=0, issues_after=0, issues_fixed=0,
             summary="No accessibility issues detected.",
             steps=[],
+            generation={"status": "not_needed", "candidate_available": False,
+                        "fallback_used": False, "failed_steps": 0, "unmapped": 0},
         )
 
     run = run_sdg(clean_html, violations_before) if request.use_sdg \
@@ -161,6 +171,8 @@ def repair_html(request: RepairRequest):
 
     response = RepairResponse(
         fixed_html=repaired_html,
+        candidate_html=run.candidate_html,
+        generation=run.generation_summary(),
         issues_before=issues_before,
         issues_after=issues_after,
         issues_fixed=issues_before - issues_after,

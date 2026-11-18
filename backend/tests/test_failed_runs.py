@@ -91,6 +91,21 @@ class TestFailedRunRecords(unittest.TestCase):
         self.assertEqual(second_record["method"], "zero_shot")
         self.assertEqual(len(list(self.records_dir.glob("*.json"))), 2)
 
+    def test_final_scan_failure_retains_generation_fallback_metadata(self):
+        self.run = RepairRun(
+            fixed_html=self.prepared,
+            steps=[Step("baseline", None, ["image-alt"], "llm_error", error="Unavailable")],
+            unmapped=0,
+        )
+        record_id = self._save(use_sdg=False)
+        record = json.loads((self.records_dir / f"{record_id}.json").read_text(encoding="utf-8"))
+        saved = record["repair_run"]
+        self.assertEqual(saved["fixed_html"], self.prepared)
+        self.assertIsNone(saved["candidate_html"])
+        self.assertTrue(saved["fallback_used"])
+        self.assertEqual(saved["generation_status"], "no_candidate")
+        self.assertEqual(saved["steps"][0]["error"], "Unavailable")
+
     def test_write_failure_removes_partial_record(self):
         with (
             patch.object(failed_runs.os, "fsync", side_effect=OSError("Disk full")),

@@ -13,8 +13,8 @@ class SemanticResult:
 
     dependencies_before: int
     dependencies_valid: int
-    preservation_rate: float
-    broken_count: int
+    preservation_rate: float | None
+    broken_count: int | None
     has_dependencies: bool
     breakdown_before: dict[str, int] = field(default_factory=dict)
     breakdown_valid: dict[str, int] = field(default_factory=dict)

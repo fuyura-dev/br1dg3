@@ -1,7 +1,7 @@
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.services.detection.detect import DetectionError
 from app.services.validation.evaluator import MissingInitialScanError, evaluate_repair
@@ -17,6 +17,10 @@ class EvaluateRequest(BaseModel):
     efficiency_data: dict[str, Any] | None = None
     structure_threshold: float = 0.85
     run_detection_if_missing: bool = True
+    fallback_used: bool = Field(
+        default=False,
+        description="True only when generation produced no accepted candidate and html_repaired is fallback output.",
+    )
 
 
 class EvaluateResponse(BaseModel):
@@ -25,6 +29,7 @@ class EvaluateResponse(BaseModel):
     structure: dict[str, Any]
     efficiency: dict[str, Any]
     semantic: dict[str, Any]
+    evaluation: dict[str, Any]
 
 
 @router.post("/evaluate", response_model=EvaluateResponse)
@@ -38,6 +43,7 @@ def evaluate_document_repair(request: EvaluateRequest):
             efficiency_data=request.efficiency_data,
             structure_threshold=request.structure_threshold,
             run_detection_if_missing=request.run_detection_if_missing,
+            fallback_used=request.fallback_used,
         )
     except MissingInitialScanError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

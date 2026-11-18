@@ -178,6 +178,7 @@ function mapMetricsToCards(metricsDict, issuesBefore, issuesAfter) {
   const str = metricsDict.structure || {};
   const efc = metricsDict.efficiency || {};
   const sem = metricsDict.semantic || {};
+  const noCandidate = metricsDict.evaluation?.score_basis === "no_candidate_failure_policy";
 
   // 1. Repair Effectiveness (CIR, FFR, Reduction Rate)
   const fallbackReduction =
@@ -250,7 +251,7 @@ function mapMetricsToCards(metricsDict, issuesBefore, issuesAfter) {
     semanticStatus = { label: `${brokenCount} Broken`, tone: "warning" };
   }
 
-  return [
+  const cards = [
     {
       id: "effectiveness",
       label: "Repair Effectiveness",
@@ -303,6 +304,25 @@ function mapMetricsToCards(metricsDict, issuesBefore, issuesAfter) {
         : "No semantic relationships present in document",
     },
   ];
+
+  if (noCandidate) {
+    for (const card of cards) {
+      if (card.id === "efficiency") {
+        card.status = { label: "Available Usage", tone: "accent" };
+        continue;
+      }
+      if (card.id === "semantic" && !hasDeps) {
+        card.displayValue = "N/A";
+        card.showBar = false;
+        continue;
+      }
+      card.score = 0;
+      card.displayValue = "No credit";
+      card.status = { label: "No Repair Candidate", tone: "warning" };
+      card.detail = "No accepted repair was produced. Zero credit is assigned; the returned fallback HTML was not scored.";
+    }
+  }
+  return cards;
 }
 
 let lastScannedHtml = null;

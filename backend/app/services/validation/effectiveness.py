@@ -15,6 +15,7 @@ class EffectivenessResult:
     rules_before: int = 0
     rules_after: int = 0
     scan_failed: bool = False
+    no_candidate: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -27,6 +28,7 @@ class EffectivenessResult:
             "rules_before": self.rules_before,
             "rules_after": self.rules_after,
             "scan_failed": self.scan_failed,
+            "no_candidate": self.no_candidate,
         }
 
 
@@ -48,6 +50,7 @@ def calculate_effectiveness(
     violations_before: list[dict] | int,
     violations_after: list[dict] | int | None,
     scan_failed: bool = False,
+    no_candidate: bool = False,
 ) -> EffectivenessResult:
     """Calculate per-document Repair Effectiveness."""
     if isinstance(violations_before, list):
@@ -57,7 +60,7 @@ def calculate_effectiveness(
         v_before = max(0, int(violations_before))
         r_before = 0
 
-    if scan_failed or violations_after is None:
+    if no_candidate or scan_failed or violations_after is None:
         return EffectivenessResult(
             violations_before=v_before,
             violations_after=v_before,
@@ -67,7 +70,8 @@ def calculate_effectiveness(
             reduction_rate=0.0,
             rules_before=r_before,
             rules_after=r_before,
-            scan_failed=True,
+            scan_failed=scan_failed or (violations_after is None and not no_candidate),
+            no_candidate=no_candidate,
         )
 
     if isinstance(violations_after, list):

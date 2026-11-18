@@ -74,6 +74,23 @@ Requests with no detected issues return without running a repair and are not cac
 `cache_hit` is `true` only when a stored response is reused. Its summary, metrics,
 and steps describe the original repair run, not new LLM usage for the current request.
 
+Responses also include `candidate_html` (the accepted assembled HTML before
+script/style restoration, or null) and `generation` with `status`,
+`candidate_available`, `fallback_used`, `failed_steps`, and `unmapped`.
+Statuses are `accepted`, `partial`, `no_candidate`, and `not_needed`;
+acceptance is not a guarantee of conformance or accessibility success.
+`fixed_html` remains the restored user output. Each step adds untrimmed
+`raw_reply` and accepted `candidate_html`; the older `repaired_html` field
+continues to contain trimmed model reply text, including rejected replies.
+
+When no candidate was accepted, metrics explicitly assign no repair credit and
+set `metrics.evaluation.score_basis` to `no_candidate_failure_policy`.
+Available usage remains recorded. Top-level `issues_after` still describes the
+scan of returned runner HTML; the metric after-count is the policy assignment.
+Normal caching preserves these statuses and scores. See the
+[candidate/fallback rules](../services/repair/README.md#candidates-and-fallback-output)
+and [metric fields](../services/validation/README.md#candidate-and-fallback-scoring).
+
 A failed initial or final scan returns HTTP 503 and does not cache a successful
 repair response. When the final scan fails, the backend saves a local JSON record
 under `backend/data/failed_runs/` and logs its record ID. The HTTP status and error
@@ -161,6 +178,14 @@ an omitted or null value means the result is unavailable.
   count is a policy assignment, not an observed measurement. The other metrics
   are still evaluated independently.
 
+For saved runs with no accepted candidate, also send `"fallback_used": true`.
+It defaults to false, meaning the supplied HTML is the artifact to evaluate.
+The flag applies the no-candidate policy above and skips detecting the fallback
+as generated output. A valid initial scan is still required. When replaying an
+accepted or partial run, pass its prepared `candidate_html` as `html_repaired`.
+Identical original/repaired HTML alone never implies generation failure.
+
 Successful evaluation returns `effectiveness`, `safety`, `structure`, `efficiency`,
-and `semantic`. Unlike `/api/evaluate`, `/api/repair` still returns HTTP 503 when
+`semantic`, and `evaluation` (artifact, score basis, and fallback flag).
+Unlike `/api/evaluate`, `/api/repair` still returns HTTP 503 when
 its final scan fails, as described above.

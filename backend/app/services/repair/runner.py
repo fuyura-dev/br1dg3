@@ -7,6 +7,7 @@ from app.services.repair.order import dependency_view, order_violations_by_depen
 from app.services.repair.patch import (
     MARKER,
     apply_reply,
+    clean_reply,
     outer_html,
     parse_document_reply,
     strip_markers,
@@ -28,6 +29,7 @@ class Step:
     related_relationships: list[str] = field(default_factory=list)
     llm: LLMResult | None = None
     error: str | None = None
+    candidate_html: str | None = None  # accepted reply/patch before document assembly
 
 
 @dataclass
@@ -35,6 +37,35 @@ class RepairRun:
     fixed_html: str
     steps: list[Step]
     unmapped: int                       # Axe nodes that could not be mapped to an element (never attempted)
+    candidate_html: str | None = field(init=False)
+    generation_status: str = field(init=False)
+    fallback_used: bool = field(init=False)
+
+    def __post_init__(self):
+        # Acceptance is tracked by steps, never inferred from HTML equality.
+        accepted = any(s.status == "applied" for s in self.steps)
+        self.candidate_html = self.fixed_html if accepted else None
+        self.fallback_used = not accepted and bool(self.steps or self.unmapped)
+        if accepted:
+            self.generation_status = "partial" if self.failed_steps or self.unmapped else "accepted"
+        else:
+            self.generation_status = "no_candidate" if self.fallback_used else "not_needed"
+
+    @property
+    def failed_steps(self):
+        return sum(
+            s.status not in {"applied", "cascade_resolved", "element_gone"}
+            for s in self.steps
+        )
+
+    def generation_summary(self):
+        return {
+            "status": self.generation_status,
+            "candidate_available": self.candidate_html is not None,
+            "fallback_used": self.fallback_used,
+            "failed_steps": self.failed_steps,
+            "unmapped": self.unmapped,
+        }
 
     def _sum(self, name):
         return sum(getattr(s.llm, name) for s in self.steps if s.llm)
@@ -181,6 +212,8 @@ def _step(current, token, table, pending):
     streamer.log(f"[STEP {token}] LLM Reply ({len(step.llm.text)} chars):\n{step.llm.text.strip()}")
     patch = apply_reply(target, step.llm.text, token)                      # mutates builder.soup
     step.status, step.warnings = patch.status, patch.warnings
+    if patch.applied:
+        step.candidate_html = clean_reply(step.llm.text)
 
     streamer.log(
         f"[STEP {token}] Applied: status={step.status} warnings={step.warnings} | "
@@ -242,4 +275,5 @@ def run_baseline(html, violations):
 
     fixed_html, status = parse_document_reply(step.llm.text)
     step.status = "applied" if status == "ok" else status
+    step.candidate_html = fixed_html
     return RepairRun(fixed_html if status == "ok" else html, [step], 0)

@@ -10,10 +10,10 @@ from app.services.detection.preprocess import preprocess
 class StructureResult:
     """Per-document Structural Preservation metrics."""
 
-    tree_edit_distance: int
+    tree_edit_distance: int | None
     original_nodes: int
-    repaired_nodes: int
-    max_nodes: int
+    repaired_nodes: int | None
+    max_nodes: int | None
     structure_similarity: float
     structure_preserved: bool
     threshold: float = 0.85
