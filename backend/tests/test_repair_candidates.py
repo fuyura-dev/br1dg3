@@ -14,7 +14,7 @@ with patch("google.genai.Client"):
 class TestRepairCandidates(unittest.TestCase):
     def setUp(self):
         self.html = (
-            '<html><body><label id="label" for="field">Name</label>'
+            '<!DOCTYPE html>\n<html><body><label id="label" for="field">Name</label>'
             '<input id="field"><img id="photo" src="photo.png">'
             '<button id="submit"></button></body></html>'
         )
@@ -78,7 +78,7 @@ class TestRepairCandidates(unittest.TestCase):
             with self.subTest(status=status):
                 self.generate.return_value = reply
                 run = runner.run_baseline(self.html, self.violations)
-                self.assertEqual(run.fixed_html, self.html)
+                self.assertEqual(run.fixed_html, runner.preprocess(self.html))
                 self.assertIsNone(run.candidate_html)
                 self.assertTrue(run.fallback_used)
                 self.assertEqual(run.generation_status, "no_candidate")
@@ -121,6 +121,33 @@ class TestRepairCandidates(unittest.TestCase):
         self.assertIsNone(run.candidate_html)
         self._assert_no_credit(self._evaluate(run))
         self.assertEqual(self.generate.call_count, 2)
+
+    def test_accepted_baseline_with_parse_errors_keeps_its_output(self):
+        reply = self.html + "</span>"
+        self.generate.return_value = self._reply(reply)
+        run = runner.run_baseline(self.html, self.violations)
+        report = self._evaluate(run)
+        self.assertEqual(run.fixed_html, reply)
+        self.assertEqual(run.candidate_html, reply)
+        self.assertEqual(run.generation_status, "accepted")
+        self.assertFalse(run.fallback_used)
+        self.assertEqual(report.safety.score, 0)
+        self.assertEqual(report.safety.reason, "parse_errors")
+        self.assertEqual(report.structure.structure_similarity, 1)
+        self.assertEqual(self.generate.call_count, 1)
+
+    def test_evaluate_api_returns_parse_error_details(self):
+        response = evaluate_api.evaluate_document_repair(evaluate_api.EvaluateRequest(
+            html_original=self.html, html_repaired=self.html + "</span>",
+            violations_before=self.violations, violations_after=[], run_detection_if_missing=False,
+        ))
+        safety = response.model_dump()["safety"]
+        self.assertEqual(safety["score"], 0)
+        self.assertEqual(safety["parser"], "html5lib")
+        self.assertEqual(safety["parser_version"], "1.1")
+        self.assertEqual(safety["parse_mode"], "document")
+        self.assertEqual(safety["error_count"], 2)
+        self.assertIn("unexpected-end-tag", [error["code"] for error in safety["errors"]])
 
     def test_sdg_empty_and_incomplete_replies_do_not_create_candidates(self):
         for reply in (self._reply(" "), self._reply("<img", ok=False, status="incomplete")):

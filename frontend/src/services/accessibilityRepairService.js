@@ -204,10 +204,21 @@ function mapMetricsToCards(metricsDict, issuesBefore, issuesAfter) {
 
   // 2. Repair Safety (Syntactic Validity Si in {0, 1})
   const isValid = Boolean(saf.is_valid);
-  const safetyScore = isValid ? 100 : 0;
-  const safetyStatus = isValid
-    ? { label: "Syntactically Valid", tone: "success" }
-    : { label: "Syntax Error", tone: "critical" };
+  const safetyUnavailable = saf.reason === "validator_error";
+  const safetyScore = safetyUnavailable ? null : isValid ? 100 : 0;
+  const safetyStatus = safetyUnavailable
+    ? { label: "Check Unavailable", tone: "warning" }
+    : isValid
+    ? { label: "No Parsing Errors", tone: "success" }
+    : { label: "Validity Check Failed", tone: "critical" };
+  const firstParseError = saf.errors?.[0];
+  const safetyDetail = safetyUnavailable
+    ? "The HTML checker failed to run. No validity score is assigned; retry evaluation."
+    : isValid
+    ? "No HTML parsing errors found. This does not establish full HTML conformance."
+    : firstParseError
+    ? `${saf.error_count} HTML parsing error(s). First: ${firstParseError.message} (line ${firstParseError.line}, column ${firstParseError.column}).`
+    : `Validity check failed: ${saf.reason || "unusable HTML output"}`;
 
   // 3. Structural Preservation (Zhang-Shasha TED, SS_i >= 0.85)
   const sim = str.structure_similarity ?? 1;
@@ -263,11 +274,10 @@ function mapMetricsToCards(metricsDict, issuesBefore, issuesAfter) {
       id: "safety",
       label: "Repair Safety",
       score: safetyScore,
-      displayValue: isValid ? "Valid" : "Invalid",
+      displayValue: safetyUnavailable ? "N/A" : isValid ? "Valid" : "Invalid",
+      showBar: !safetyUnavailable,
       status: safetyStatus,
-      detail: isValid
-        ? `Parsed cleanly (${saf.element_count ?? "DOM"} elements, 0 syntax errors)`
-        : `Safety failed: ${saf.reason || "malformed HTML output"}`,
+      detail: safetyDetail,
     },
     {
       id: "structural",

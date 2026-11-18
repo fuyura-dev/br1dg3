@@ -111,9 +111,12 @@ def evaluate_repair(
     # 2. Metric 2: Repair Safety (Syntactic Validity)
     safety = (
         SafetyResult(False, 0, "no_candidate", warnings=["Assigned no credit: no accepted repair candidate."])
-        if fallback_used else calculate_safety(html_repaired)
+        if fallback_used else calculate_safety(html_repaired, html_original=html_original)
     )
-    status_str = "Valid" if safety.is_valid else f"Invalid ({safety.reason})"
+    status_str = (
+        "Unavailable (validator_error)" if safety.is_valid is None
+        else "Valid" if safety.is_valid else f"Invalid ({safety.reason})"
+    )
     streamer.log(
         f"[METRICS] 2/5 Safety: Syntactic {status_str} ({safety.element_count} elements)"
     )

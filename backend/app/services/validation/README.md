@@ -11,6 +11,52 @@ Text, attributes, and comments are excluded; fragments use a synthetic document
 root. “Unpruned” means these parsed trees are not contracted before measuring TED.
 Large trees can take longer to evaluate.
 
+## Syntactic validity
+
+`safety.py::calculate_safety()` uses **html5lib 1.1** directly to check the
+supplied HTML for parsing errors. It does not replace the artifact with the
+parser's recovered tree, change repair acceptance, or alter other metrics.
+BeautifulSoup remains in the repair pipeline; within this check it only
+identifies explicit document markup and whether the source contains elements.
+The original candidate string is passed unchanged to html5lib.
+
+- Use document mode when either the original input or candidate has a doctype
+  or an `html`, `head`, or `body` element. Document mode requires a valid HTML
+  doctype; pre-existing errors are not waived for either repair method.
+- Otherwise use fragment mode with a `div` context. A fragment does not need a
+  doctype or document wrapper. Context-specific fragments such as bare `tr`/`td`
+  are not supported; supply their containing table. Comments, attribute values,
+  and text inside script/textarea/title do not select document mode.
+- Parsing uses `scripting=False` and collects every reported parsing error,
+  including errors recovered by the parser. A nonempty output containing HTML
+  elements receives `score: 1` only when there are no reported parse errors.
+  Empty or element-free output receives 0. Legal optional closing tags are
+  permitted. Markdown fences retain the existing warning-only treatment.
+- Responses retain the existing safety fields and add `parser`,
+  `parser_version`, `parse_mode`, `fragment_context`, `error_count`, and `errors`
+  (code, message, line, column). Positions refer to the supplied evaluation
+  string, not the original page or individual LLM reply. `element_count` counts
+  recovered element nodes, including implicit document elements, excluding
+  comments and the fragment root.
+- An unexpected checker failure produces `reason: "validator_error"`, null
+  `score`/`is_valid`/error details, and an unavailable dashboard result. Retain
+  and retry that measurement; do not count it as valid or invalid. Empty output
+  and no-candidate assignments also have null error details because parsing
+  was not performed. Other metrics remain independent.
+
+This is **absence of parsing errors under the specified parser**, not complete
+HTML conformance or accessibility validation. For example, `<ul><div>Text</div></ul>`
+has a prohibited child but causes no html5lib parsing error. Axe still measures
+accessibility separately. html5lib is version-pinned; this is not a claim of
+conformance with every rule in the latest HTML specification.
+
+For repair runs the measured artifact is the accepted assembled candidate,
+before fallback substitution and script/style restoration. Existing preprocessing
+and patch assembly may already have normalized errors in raw replies; this score
+does not measure raw LLM-generation syntax. Standalone `/evaluate` checks the
+supplied `html_repaired`, using `html_original` to establish document context.
+Use saved prepared candidates and matching originals when replaying runs.
+
 ## Candidate and fallback scoring
 
 When a `RepairRun` is supplied, evaluation uses its accepted assembled candidate.
@@ -39,8 +85,8 @@ SDG run is evaluated on its assembled candidate, retaining failed steps separate
 With HTML alone, the evaluator cannot infer generation failure from equality;
 saved fallback evaluations must supply `fallback_used: true` explicitly.
 
-Stronger HTML validation, semantic relationship matching and validity rules,
-usage accounting corrections, and dataset aggregation remain pending.
+Full HTML conformance is outside the syntax check. Semantic relationship matching
+and validity rules, usage accounting corrections, and dataset aggregation remain pending.
 No-candidate rows belong in the planned N denominator,
 and in N_s only when original dependencies exist; do not drop them as missing TED.
 

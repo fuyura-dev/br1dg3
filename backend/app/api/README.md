@@ -187,5 +187,13 @@ Identical original/repaired HTML alone never implies generation failure.
 
 Successful evaluation returns `effectiveness`, `safety`, `structure`, `efficiency`,
 `semantic`, and `evaluation` (artifact, score basis, and fallback flag).
+Safety uses html5lib 1.1 parsing errors. Its response includes parser/version,
+document or fragment mode, error count, and error messages with line/column
+positions. Document markup in either original or repaired HTML selects document
+mode (including the doctype check); other inputs use a `div` fragment context.
+An unexpected checker failure sets safety `score` and `is_valid` to null with
+`reason: "validator_error"`; retry that measurement. Other metrics remain
+available. The checker does not rewrite the repair output or control repair
+acceptance. See the [validation rules and limitations](../services/validation/README.md#syntactic-validity).
 Unlike `/api/evaluate`, `/api/repair` still returns HTTP 503 when
 its final scan fails, as described above.
