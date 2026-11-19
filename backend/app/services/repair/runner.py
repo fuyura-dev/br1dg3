@@ -14,6 +14,7 @@ from app.services.repair.patch import (
     strip_markers,
 )
 from app.services.repair.prompt import build_baseline_prompt, build_sdg_prompt
+from app.services.repair.root_view import RootViewTooLarge
 from app.services.sdg.builder import SDGBuilder
 
 
@@ -22,7 +23,7 @@ class Step:
     token: str
     tag: str | None
     rules: list[str]
-    status: str        # applied | element_gone | llm_error | llm_not_ok:<status> | empty_reply | no_element | tracking_rejected
+    status: str        # applied | element_gone | llm_error | llm_not_ok:<status> | empty_reply | no_element | tracking_rejected | patch_rejected | prompt_too_large
     warnings: list[str] = field(default_factory=list)
     node_id: str | None = None          # the node id AT THAT STEP (ids shift as patches are applied)
     original_node_id: str | None = None
@@ -192,7 +193,12 @@ def _step(current, token, table, pending):
         f"{d.get('relation')}: {ctx.nodes[u].get('label', u)} -> {ctx.nodes[v].get('label', v)}"
         for u, v, d in ctx.edges(data=True)
     ]
-    sdg_prompt = build_sdg_prompt(ctx, builder.element_to_id)
+    try:
+        sdg_prompt = build_sdg_prompt(ctx, builder.element_to_id)
+    except RootViewTooLarge as exc:
+        step.status, step.error = "prompt_too_large", str(exc)
+        streamer.log(f"[STEP {token}] Root prompt rejected: {exc}")
+        return step, current
     streamer.log(
         f"[STEP {token}] Target: <{target.name}> | Rules: {rules} | "
         f"Prompt Size: {len(sdg_prompt.user) + len(sdg_prompt.system)} chars (~{(len(sdg_prompt.user) + len(sdg_prompt.system)) // 4} est tokens)"

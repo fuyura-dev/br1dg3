@@ -1,6 +1,7 @@
 import re
 
 from bs4 import BeautifulSoup
+from bs4.dammit import EntitySubstitution
 from bs4.formatter import HTMLFormatter
 
 NON_ESSENTIAL = ('script', 'style')
@@ -13,7 +14,7 @@ class _AsWritten(HTMLFormatter):
         return [(k, None if v == "" else v) for k, v in tag.attrs.items()]
 
 
-_AS_WRITTEN = _AsWritten(void_element_close_prefix="")
+_AS_WRITTEN = _AsWritten(void_element_close_prefix="", entity_substitution=EntitySubstitution.substitute_xml)
 
 
 def stash_non_essential(html: str) -> tuple[str, list[str]]:

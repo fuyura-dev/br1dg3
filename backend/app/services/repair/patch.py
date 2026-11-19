@@ -1,9 +1,18 @@
 import re
+from collections import defaultdict, deque
 from copy import deepcopy
 from dataclasses import dataclass, field
 
-from bs4 import BeautifulSoup, Comment, Tag
+from bs4 import BeautifulSoup, Comment, NavigableString, Tag
+from bs4.dammit import EntitySubstitution
 from bs4.formatter import HTMLFormatter
+
+from app.services.repair.root_view import (
+    CONTENT_PREFIX,
+    HIDDEN_ROOT_TAGS,
+    RootPatchError,
+    content_references,
+)
 
 MARKER = "data-br1dg3"       # temporary tracking attribute: data-br1dg3="v1", "v2", ...
 
@@ -15,10 +24,12 @@ class _AsWritten(HTMLFormatter):
         return [(k, None if v == "" else v) for k, v in tag.attrs.items()]   # None -> bare attribute
 
 
-_AS_WRITTEN = _AsWritten(void_element_close_prefix="")
+_AS_WRITTEN = _AsWritten(void_element_close_prefix="", entity_substitution=EntitySubstitution.substitute_xml)
 
 
 def outer_html(node):
+    if isinstance(node, NavigableString):
+        return node.output_ready(formatter=_AS_WRITTEN)
     return node.decode(formatter=_AS_WRITTEN)
 
 
@@ -46,7 +57,7 @@ def clean_reply(text):
 @dataclass
 class PatchResult:
     applied: bool
-    status: str                                   # applied | empty_reply | no_element | tracking_rejected
+    status: str                                   # applied | empty_reply | no_element | tracking_rejected | patch_rejected
     warnings: list[str] = field(default_factory=list)
 
 
@@ -111,7 +122,28 @@ def _restore_tracking(elements, expected, original_ids):
     return recovered, errors
 
 
-HIDDEN_IN_PROMPT_TAGS = {"script", "style", "link", "meta", "noscript", "svg", "template"}
+HIDDEN_IN_PROMPT_TAGS = HIDDEN_ROOT_TAGS
+
+
+def _resolve_content_references(target, elements):
+    """Expand once on reply copies; retain source identity for reconstruction."""
+    references = content_references(target)
+    resolved, seen = {}, set()
+    for element in elements:
+        for node in list(element.descendants):
+            if not isinstance(node, NavigableString) or CONTENT_PREFIX not in str(node):
+                continue
+            key = str(node)
+            if not isinstance(node, Comment) or key not in references:
+                raise RootPatchError("unknown_content_reference")
+            if key in seen:
+                raise RootPatchError("duplicate_content_reference")
+            seen.add(key)
+            reference = references[key]
+            clone = deepcopy(reference.node)
+            node.replace_with(clone)
+            resolved[id(clone)] = reference
+    return resolved
 
 
 def _is_placeholder(tag: Tag) -> bool:
@@ -127,11 +159,11 @@ def _match_real_element(reply_el: Tag, pool: list[Tag], used_ids: set[int]) -> T
             if id(el) not in used_ids and el.get("id") == rid:
                 return el
 
-    # Match by same tag name + non-skipped attributes (or placeholder if original had children)
+    # Fall back to a same-tag placeholder or matching text, in document order.
     for el in pool:
         if id(el) in used_ids or el.name != reply_el.name:
             continue
-        if _is_placeholder(reply_el) and el.find(True):
+        if _is_placeholder(reply_el):
             return el
         if not _is_placeholder(reply_el) and el.get_text(strip=True) == reply_el.get_text(strip=True):
             return el
@@ -139,19 +171,85 @@ def _match_real_element(reply_el: Tag, pool: list[Tag], used_ids: set[int]) -> T
     return None
 
 
-def _reconcile_container(real_container: Tag, reply_container: Tag) -> None:
-    """Generically reconcile a container (such as <head> or <body>) with the LLM's reply
+def _literal_key(node):
+    # Comments are exact; formatting-only whitespace differences in an echoed
+    # text node do not justify duplicating the original words.
+    return type(node), str(node) if isinstance(node, Comment) else " ".join(str(node).split())
+
+
+def _restore_omitted_content(container, original_children, used_ids, emitted_literals, referenced_ids):
+    """Keep omitted nodes in their original parent when neighbours define a slot.
+
+    Explicitly echoed text/comments consume one original occurrence each. Use
+    the original node to retain its whitespace/entity value, without duplication.
+    A wrapper does not implicitly take omitted adjacent text. Conflicting anchors
+    or a mixture of unmatched old/new text reject the candidate instead of guessing.
+    """
+    echoes = defaultdict(deque)
+    for node in emitted_literals:
+        echoes[_literal_key(node)].append(node)
+    for node in original_children:
+        if not isinstance(node, Tag) and echoes[_literal_key(node)]:
+            if id(node) in referenced_ids:
+                continue
+            echoes[_literal_key(node)].popleft().replace_with(node)
+            used_ids.add(id(node))
+    if any(id(node) in referenced_ids and echoes[_literal_key(node)] for node in original_children):
+        raise RootPatchError("duplicate_content_reference")
+
+    def meaningful_text(node):
+        return isinstance(node, NavigableString) and not isinstance(node, Comment) and bool(str(node).strip())
+
+    missing_text = any(meaningful_text(node) and id(node) not in used_ids for node in original_children)
+    new_text = any(meaningful_text(node) for remaining in echoes.values() for node in remaining)
+    if missing_text and new_text:
+        raise RootPatchError("ambiguous_text_rewrite")
+
+    def anchor(node):
+        while node.parent is not container:
+            if node.parent is None:
+                raise RootPatchError("ambiguous_content_placement")
+            node = node.parent
+        return node
+
+    pending, previous = [], None
+    for node in original_children:
+        if id(node) in used_ids:
+            if pending:
+                following = anchor(node)
+                if previous is not None:
+                    preceding = anchor(previous)
+                    positions = {id(child): i for i, child in enumerate(container.contents)}
+                    if positions[id(preceding)] >= positions[id(following)]:
+                        raise RootPatchError("ambiguous_content_placement")
+                following.insert_before(*pending)
+                pending = []
+            previous = node
+        else:
+            pending.append(node)
+    if pending:
+        if previous is not None:
+            anchor(previous).insert_after(*pending)
+        else:
+            container.extend(pending)
+
+
+def _reconcile_container(real_container: Tag, reply_container: Tag, resolved=None) -> None:
+    """Reconcile body/section content with the LLM's reply
     by expanding '…' placeholders back to their original DOM nodes while keeping any
     new elements, wrappers, or attribute changes returned by the LLM."""
     if _is_placeholder(reply_container):
         return
+    resolved = resolved or {}
 
-    real_children = [c for c in real_container.children if isinstance(c, Tag)]
+    original_children = list(real_container.contents)
+    real_children = [c for c in original_children if isinstance(c, Tag)]
     visible_pool = [c for c in real_children if c.name not in HIDDEN_IN_PROMPT_TAGS]
-    hidden_children = [c for c in real_children if c.name in HIDDEN_IN_PROMPT_TAGS]
 
     used_ids: set[int] = set()
-    reply_tags = [c for c in reply_container.children if isinstance(c, Tag)]
+    reserved_ids: set[int] = set()
+    emitted_literals = []
+    referenced_ids = set()
 
     # First pass: pre-claim exact ID matches anywhere in reply_container so nested
     # elements (e.g. <div id="__nuxt">…</div> inside <main>) claim their real node.
@@ -160,121 +258,72 @@ def _reconcile_container(real_container: Tag, reply_container: Tag) -> None:
         cid = candidate.get("id")
         if cid:
             for real_el in visible_pool:
-                if id(real_el) not in used_ids and real_el.get("id") == cid:
+                if id(real_el) not in reserved_ids and real_el.get("id") == cid:
                     id_map[id(candidate)] = real_el
-                    used_ids.add(id(real_el))
+                    reserved_ids.add(id(real_el))
                     break
+    for candidate in reply_container.descendants:
+        reference = resolved.get(id(candidate))
+        if reference is not None and reference.parent is real_container:
+            reserved_ids.add(id(reference.node))
 
-    # Fast path: if every top-level reply tag directly matches an existing visible element
-    # (no new wrapper tags or newly inserted sibling elements), update them in-place
-    # so all original newlines, indentation, comments, and hidden tags remain untouched.
-    temp_used: set[int] = set()
-    direct_matches: list[tuple[Tag, Tag]] = []
-    all_direct = True
-    for top_reply in reply_tags:
-        m = id_map.get(id(top_reply))
-        if m is None:
-            m = _match_real_element(top_reply, visible_pool, temp_used)
-        if m is None:
-            all_direct = False
-            break
-        temp_used.add(id(m))
-        direct_matches.append((top_reply, m))
-
-    if all_direct:
-        for top_reply, m in direct_matches:
-            m.name = top_reply.name
-            for k, v in top_reply.attrs.items():
-                if k != MARKER:
-                    m[k] = v
-            if not _is_placeholder(top_reply) and top_reply.find(True):
-                _reconcile_container(m, top_reply)
-        return
-
-    comments_before: list[Comment] = []
-    comments_after: list[Comment] = []
-    seen_visible = False
-    for c in list(real_container.children):
-        if isinstance(c, Tag) and c.name not in HIDDEN_IN_PROMPT_TAGS:
-            seen_visible = True
-        elif isinstance(c, Comment):
-            if seen_visible:
-                comments_after.append(c.extract())
-            else:
-                comments_before.append(c.extract())
-
-    def hydrate_node(reply_node: Tag) -> list[Tag]:
+    def hydrate_node(reply_node):
+        reference = resolved.get(id(reply_node))
+        if reference is not None:
+            if reference.parent is not real_container:
+                raise RootPatchError("content_reference_scope")
+            used_ids.add(id(reference.node))
+            referenced_ids.add(id(reference.node))
+            return [reference.node.extract()]
+        if not isinstance(reply_node, Tag):
+            cloned = deepcopy(reply_node)
+            emitted_literals.append(cloned)
+            return [cloned]
         matched = id_map.get(id(reply_node))
         if matched is None:
-            matched = _match_real_element(reply_node, visible_pool, used_ids)
-            if matched is not None:
-                used_ids.add(id(matched))
+            matched = _match_real_element(reply_node, visible_pool, used_ids | reserved_ids)
 
         if matched is not None:
+            used_ids.add(id(matched))
             matched.name = reply_node.name
             for k, v in reply_node.attrs.items():
                 if k != MARKER:
                     matched[k] = v
-            if not _is_placeholder(reply_node) and reply_node.find(True):
-                _reconcile_container(matched, reply_node)
+            has_reference = any(id(node) in resolved for node in reply_node.descendants)
+            if not _is_placeholder(reply_node) and (reply_node.find(True) or has_reference):
+                _reconcile_container(matched, reply_node, resolved)
             return [matched.extract()]
 
-        # If this is an unmatched placeholder (e.g. LLM wrote <wrapper>…</wrapper> to wrap
-        # remaining visible children), wrap the remaining unused visible elements.
+        # A new collapsed wrapper carries the remaining original content,
+        # including text, comments and hidden nodes, in original order.
         if _is_placeholder(reply_node):
-            remaining = [el for el in visible_pool if id(el) not in used_ids]
+            remaining = [node for node in original_children if id(node) not in used_ids | reserved_ids]
             if remaining:
-                for el in remaining:
-                    used_ids.add(id(el))
-                wrapper = BeautifulSoup(f"<{reply_node.name}></{reply_node.name}>", "html.parser").find(reply_node.name)
-                for k, v in reply_node.attrs.items():
-                    if k != MARKER:
-                        wrapper[k] = v
-                wrapper.append("\n")
-                for el in remaining:
-                    wrapper.append(el.extract())
-                    wrapper.append("\n")
+                wrapper = deepcopy(reply_node)
+                wrapper.clear()
+                wrapper.attrs.pop(MARKER, None)
+                for node in remaining:
+                    used_ids.add(id(node))
+                    wrapper.append(node.extract())
                 return [wrapper]
             return []
 
-        # Otherwise it is a newly introduced element or wrapper with children
-        child_tags = [c for c in reply_node.children if isinstance(c, Tag)]
-        if not child_tags:
-            cloned = BeautifulSoup(outer_html(reply_node), "html.parser").find(True)
-            if cloned is not None and MARKER in cloned.attrs:
-                del cloned[MARKER]
-            return [cloned] if cloned is not None else []
-
-        wrapper = BeautifulSoup(f"<{reply_node.name}></{reply_node.name}>", "html.parser").find(reply_node.name)
-        for k, v in reply_node.attrs.items():
-            if k != MARKER:
-                wrapper[k] = v
-        wrapper.append("\n")
-        for child in child_tags:
+        # New markup retains mixed content, not just child element tags.
+        wrapper = deepcopy(reply_node)
+        wrapper.clear()
+        wrapper.attrs.pop(MARKER, None)
+        for child in reply_node.contents:
             for hydrated in hydrate_node(child):
                 wrapper.append(hydrated)
-                wrapper.append("\n")
         return [wrapper]
 
-    new_children: list[Tag] = []
-    for top_reply in reply_tags:
+    new_children = []
+    for top_reply in reply_container.contents:
         new_children.extend(hydrate_node(top_reply))
 
-    # Preserve any original visible elements the LLM omitted (e.g. <link> tags) and all hidden tags (<script>, <style>, etc.)
-    leftover_visible = [el.extract() for el in visible_pool if id(el) not in used_ids]
-    preserved_hidden = [el.extract() for el in hidden_children]
-
     real_container.clear()
-    real_container.append("\n")
-    for el in comments_before:
-        real_container.append(el)
-        real_container.append("\n")
-    for el in new_children + leftover_visible + preserved_hidden:
-        real_container.append(el)
-        real_container.append("\n")
-    for el in comments_after:
-        real_container.append(el)
-        real_container.append("\n")
+    real_container.extend(new_children)
+    _restore_omitted_content(real_container, original_children, used_ids, emitted_literals, referenced_ids)
 
 
 def _reconcile_root_attributes(original: Tag, reply: Tag) -> None:
@@ -287,7 +336,42 @@ def _reconcile_root_attributes(original: Tag, reply: Tag) -> None:
             original[name] = value
 
 
-def _apply_document_patch(target: Tag, elements: list[Tag]) -> None:
+def _apply_title_patch(html: Tag, reply_head: Tag, resolved) -> str | None:
+    """Update one document title without reconstructing unrelated head content."""
+    titles = reply_head.find_all("title", recursive=False)
+    if len(titles) > 1:
+        return "multiple_reply_titles"
+    if not titles or _is_placeholder(titles[0]):
+        return None
+    reply_title = titles[0]
+    head = html.find("head", recursive=False)
+    original_titles = head.find_all("title", recursive=False) if head is not None else []
+    if len(original_titles) > 1:
+        return "ambiguous_existing_titles"
+    for node in reply_title.descendants:
+        reference = resolved.get(id(node))
+        if reference is not None and (not original_titles or reference.parent is not original_titles[0]):
+            return "content_reference_scope"
+    if head is None:
+        head = BeautifulSoup("<head></head>", "html.parser").head
+        body = html.find("body", recursive=False)
+        if body is not None:
+            body.insert_before(head)
+        else:
+            html.insert(0, head)
+    if not original_titles:
+        head.append(deepcopy(reply_title))
+        return None
+    title = original_titles[0]
+    for name, value in reply_title.attrs.items():
+        if name != MARKER:
+            title[name] = value
+    title.clear()
+    title.extend(deepcopy(list(reply_title.contents)))
+    return None
+
+
+def _apply_document_patch(target: Tag, elements: list[Tag], resolved) -> str | None:
     """Reconcile an <html> or <body> reply with the live BeautifulSoup tree by expanding
     collapsed '…' placeholders back to their original DOM nodes."""
     if target.name == "html":
@@ -295,12 +379,14 @@ def _apply_document_patch(target: Tag, elements: list[Tag]) -> None:
         if reply_html is not None:
             _reconcile_root_attributes(target, reply_html)
             reply_head = reply_html.find("head", recursive=False)
-            if reply_head is not None and target.head is not None:
-                _reconcile_container(target.head, reply_head)
+            if reply_head is not None:
+                error = _apply_title_patch(target, reply_head, resolved)
+                if error:
+                    return error
             reply_body = reply_html.find("body", recursive=False)
             if reply_body is not None and target.body is not None:
                 _reconcile_root_attributes(target.body, reply_body)
-                _reconcile_container(target.body, reply_body)
+                _reconcile_container(target.body, reply_body, resolved)
             return
 
     real_body = target.body if target.name == "html" else target
@@ -315,7 +401,7 @@ def _apply_document_patch(target: Tag, elements: list[Tag]) -> None:
     else:
         _reconcile_root_attributes(real_body, reply_body)
 
-    _reconcile_container(real_body, reply_body)
+    _reconcile_container(real_body, reply_body, resolved)
 
 
 
@@ -363,7 +449,13 @@ def apply_reply(target, reply, token):
         # The prompt collapses descendants; validate the expanded result, not
         # marker absence in that shortened reply. Work on a copy for rollback.
         candidate = deepcopy(target)
-        _apply_document_patch(candidate, elements)
+        try:
+            resolved = _resolve_content_references(candidate, elements)
+            error = _apply_document_patch(candidate, elements, resolved)
+        except RootPatchError as exc:
+            error = str(exc)
+        if error:
+            return PatchResult(False, "patch_rejected", warnings + [error])
         recovered, errors = _restore_tracking([candidate], expected, original_ids)
         if errors:
             return PatchResult(False, "tracking_rejected", warnings + errors)

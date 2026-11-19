@@ -1,9 +1,18 @@
 from collections import defaultdict
 from dataclasses import dataclass
+from html import escape
 
-from bs4 import Tag
+from bs4 import Comment, Tag
 
 from app.services.repair.patch import MARKER, is_shown_in_shallow_prompt, outer_html
+from app.services.repair.root_view import (
+    CONTENT_PREFIX,
+    HIDDEN_ROOT_TAGS,
+    ROOT_LITERAL_CHAR_LIMIT,
+    ROOT_MARKUP_CHAR_LIMIT,
+    RootViewTooLarge,
+    content_references,
+)
 
 VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
 
@@ -95,7 +104,7 @@ def _index(node_id):
     return int(node_id.split("_")[1])                    # node_{index}_{tag} = document order
 
 
-def _snippet(element, limit=80):
+def _snippet(element, limit=80, *, collapse_long_text=False):
     """Shallow view of a context element: its tag + attributes + short text, children collapsed."""
     attrs = []
     for name, value in element.attrs.items():
@@ -103,48 +112,74 @@ def _snippet(element, limit=80):
             continue
         if isinstance(value, list):
             value = " ".join(value)
-        attrs.append(name if value == "" else f'{name}="{value}"')
+        attrs.append(name if value == "" else f'{name}="{escape(str(value), quote=True)}"')
     open_tag = "<" + " ".join([element.name, *attrs]) + ">"
     if element.name in VOID_TAGS:
         return open_tag
     if element.find(True):                               # has child elements: do not expand
         return f"{open_tag}…</{element.name}>"
     text = " ".join(element.get_text().split())
-    if len(text) > limit:
-        text = text[:limit] + "…"
-    return f"{open_tag}{text}</{element.name}>"
+    if collapse_long_text and CONTENT_PREFIX in text:
+        text = "…"
+    elif len(text) > limit:
+        text = "…" if collapse_long_text else text[:limit] + "…"
+    return f"{open_tag}{escape(text, quote=False)}</{element.name}>"
 
 
-def _shallow_layout_tree(element, max_depth=2, current_depth=0):
-    """Render a shallow view of a root/layout element (e.g. html, body) down to max_depth hops,
-    collapsing deeper children with '…' so the LLM sees top-level sections without token explosions."""
-    if current_depth >= max_depth:
-        return _snippet(element)
+def _shallow_layout_tree(element, max_depth=2, current_depth=0, *, show_title=False):
+    """Bound root markup without truncating HTML or losing root attribute visibility."""
+    references = {id(ref.node): key for key, ref in content_references(element).items()}
 
-    if element.name == "head":
-        return "<head>…</head>"
+    def reference(node):
+        return f"<!--{references[id(node)]}-->"
 
-    attrs = []
-    for k, v in element.attrs.items():
-        if not is_shown_in_shallow_prompt(k):
-            continue
-        if isinstance(v, list):
-            v = " ".join(v)
-        attrs.append(k if v == "" else f'{k}="{v}"')
-    open_tag = f"<{element.name}" + ((" " + " ".join(attrs)) if attrs else "") + ">"
+    def literal(node):
+        markup = outer_html(node)
+        if isinstance(node, Comment) or len(markup) > ROOT_LITERAL_CHAR_LIMIT or CONTENT_PREFIX in markup:
+            return reference(node)
+        return markup
 
-    if element.name in VOID_TAGS:
-        return open_tag
+    def opening(node):
+        attrs = []
+        for name, value in node.attrs.items():
+            if not is_shown_in_shallow_prompt(name):
+                continue
+            if isinstance(value, list):
+                value = " ".join(value)
+            attrs.append(name if value == "" else f'{name}="{escape(str(value), quote=True)}"')
+        return f"<{node.name}" + ((" " + " ".join(attrs)) if attrs else "") + ">"
 
-    children_tags = [
-        c for c in element.children
-        if isinstance(c, Tag) and c.name not in {"script", "style", "link", "meta", "noscript", "svg", "template"}
-    ]
-    if not children_tags:
-        return _snippet(element)
+    def render(node, depth, limit):
+        if node.name == "head":
+            if not show_title:
+                return "<head>…</head>"
+            titles = []
+            for title in node.find_all("title", recursive=False):
+                contents = "".join(outer_html(child) if isinstance(child, Tag) else literal(child) for child in title.contents)
+                titles.append(f"{opening(title)}{contents}</title>")
+            return "<head>" + "".join(titles) + "</head>"
+        # Keep the HTML/head/body shells: hiding body attributes would make a
+        # later explicit body reply's omissions unsafe to interpret as deletion.
+        if depth >= limit and node.name != "html":
+            return _snippet(node, collapse_long_text=True)
+        start = opening(node)
+        if node.name in VOID_TAGS:
+            return start
+        contents = []
+        for child in node.contents:
+            if isinstance(child, Tag):
+                contents.append(reference(child) if child.name in HIDDEN_ROOT_TAGS else render(child, depth + 1, limit))
+            else:
+                contents.append(literal(child))
+        return f"{start}{''.join(contents)}</{node.name}>"
 
-    inner = "\n".join("  " * (current_depth + 1) + _shallow_layout_tree(c, max_depth, current_depth + 1) for c in children_tags)
-    return f"{open_tag}\n{inner}\n" + "  " * current_depth + f"</{element.name}>"
+    for limit in range(max_depth, -1, -1):
+        markup = render(element, current_depth, limit)
+        if len(markup) <= ROOT_MARKUP_CHAR_LIMIT:
+            return markup
+    raise RootViewTooLarge(
+        f"Root markup needs {len(markup)} characters even at minimum depth; limit is {ROOT_MARKUP_CHAR_LIMIT}."
+    )
 
 
 def _chains_to_target(ctx, target, label):
@@ -220,8 +255,9 @@ def build_sdg_prompt(ctx, element_ids):
     ) or "(none recorded)"
 
     target_el = element_ids.element(target)
+    title_issue = target_el.name == "html" and any(issue.get("id") == "document-title" for issue in issues)
     if target_el.name == "html":
-        target_markup = _shallow_layout_tree(target_el, max_depth=2)
+        target_markup = _shallow_layout_tree(target_el, max_depth=2, show_title=title_issue)
     elif target_el.name == "body":
         target_markup = _shallow_layout_tree(target_el, max_depth=1)
     else:
@@ -231,6 +267,13 @@ def build_sdg_prompt(ctx, element_ids):
         "## Violations on the target element\n" + violations,
         f"## Target element [T]\n{target_markup}",
     ]
+    if title_issue:
+        parts.append(
+            "## Document title repair\n"
+            "Return one complete <title> inside <head> in the <html> reply; do not collapse its text with …. "
+            "A content reference may be retained unchanged to preserve an existing long title. "
+            "Add <head> or <title> if absent. Other head content is omitted from this view and will be preserved."
+        )
 
     if others:
         lines = []
@@ -251,6 +294,10 @@ def build_sdg_prompt(ctx, element_ids):
             "To change attributes on <html> or <body>, return that tag explicitly. "
             "Keep every unchanged shown attribute; omitting a shown attribute from that tag removes it. "
             "Attributes hidden from this view (class, style, data-*) are preserved when omitted. "
+            "Keep existing direct text unchanged. Preserve each __BR1DG3_CONTENT_ comment reference exactly once "
+            "in its original container or inside a new wrapper around that content; it restores original content, not a new comment. "
+            "When adding text, explicitly retain the original text or its reference. "
+            "Omitted content stays in its original parent when its position is clear; ambiguous reconstruction is rejected. "
             "For layout landmarks (<main>, <header>, <footer>), wrap or convert top-level body sections. "
             "Keep inner section contents collapsed with … to keep the response concise."
         )

@@ -70,8 +70,7 @@ frontend displays the rejected step as failed. Recovery is recorded as
 
 These are conservative tracking checks: they can reject a repair that removes or
 changes a tracked element, even if that repair might otherwise be useful. They do
-not verify accessibility repair, solve all root-container text/attribute/title
-handling, or introduce extra Axe scans, model retries or block editing. The
+not verify accessibility repair or introduce extra Axe scans, model retries or block editing. The
 zero-shot document parser does not use this SDG marker policy.
 
 Run `python -m unittest tests.test_repair_tracking` from `backend/` for recovery,
@@ -95,11 +94,89 @@ Each root is handled independently. A body-only reply keeps the HTML element's
 attributes; an HTML reply without a body keeps the body's attributes. A reply
 containing only a wrapper such as `<main>` does not request root-attribute removal.
 This policy applies to HTML/body roots. Other matched descendants in shortened
-replies still use the existing container reconciler.
+replies merge returned attribute values and retain omitted attributes.
 
 Run `python -m unittest tests.test_root_attributes` from `backend/` for attribute
 removal, additions/updates, prompt round trips, tracking rollback, and child-context
 refresh after an accepted body repair. Model replies are controlled fixtures.
+
+## Content and document titles in root replies
+
+The shallow root view shows short direct text. Text longer than 160 serialized
+characters, comments, and hidden elements use `<!--__BR1DG3_CONTENT_...__-->`
+references to original parsed nodes. Copying a reference retains that occurrence
+without requiring the model to reproduce its contents. References are expanded
+before publishing the candidate; they are not added to the final document.
+Long leaf text at the depth limit collapses fully to `…`, rather than a shortened
+prefix that could be mistaken for replacement text.
+
+`ROOT_MARKUP_CHAR_LIMIT` and `ROOT_LITERAL_CHAR_LIMIT` in `root_view.py` configure
+the limits. Root **target markup** is capped at 8,000 characters; the renderer
+reduces expansion depth to fit, retaining shown HTML/body attributes. This is
+not a token limit or a cap on the complete prompt, related context, ordinary
+targets, or baseline documents. If the minimum view still exceeds the cap, the
+runner records `prompt_too_large` without a model call, retains current HTML, and
+continues the schedule. The document remains in the run; the step counts as a
+failure. Freeze these settings before experiments; they are engineering defaults,
+not empirically optimal thresholds.
+
+Related read-only snippets retain their existing length limit. Shared
+preprocessing and repair serialization escape literal markup characters, so
+text such as `&lt;button&gt;` remains text after another parse. This correction
+applies to both repair methods and does not change script/style removal.
+
+Container reconstruction processes text, comments and element tags. A new
+collapsed wrapper carries remaining original content in order. Explicitly echoed
+text/comments consume original occurrences individually, retaining the original
+whitespace without duplicating the text. References can stay in their original
+container or move inside a new wrapper around that content. Moving them into a
+different existing container is rejected. References also retain asset-stash
+comments without exposing their full contents.
+
+Omitted content stays in its **original parent** where surviving neighbours
+define a clear position. For example, wrapping a div while omitting adjacent
+text leaves that text outside the wrapper. Omitted content between two children
+moved into the same new wrapper has no clear position in the original parent,
+so the patch is rejected. Explicitly echoed/referenced content, or a whole-content
+`…` wrapper, can include that content in the wrapper. If old direct text is
+omitted while unmatched new text is supplied, the patch is rejected rather than
+appending both versions. Adding a heading therefore requires retaining existing
+text explicitly, by reference, or through a whole-content placeholder.
+
+Explicit element order in a reply is respected. These checks do not prove that
+arbitrary DOM moves or semantic changes are correct: ambiguous ID-less
+placeholders still use same-tag/document-order matching, other matched-descendant
+attribute omissions still merge, and ordinary matched leaf-text edits are outside
+this root-wrapper fix. General block/subtree editing remains separate work.
+
+For an HTML target with `document-title`, the root markup shows existing titles
+(using references for long text), and the prompt requests one title inside a head.
+An unchanged reference can preserve a long title. Other head
+content remains hidden/read-only. Within an explicit HTML reply, a title inside
+the head replaces the existing title's text in place, with or without an ID;
+missing titles and heads are inserted.
+Unrelated head elements, attributes and comments are preserved. An omitted or
+collapsed head/title retains the original. This handles title repair, not arbitrary
+head editing.
+
+Multiple returned titles, or an explicit title replacement when several originals
+exist, return `patch_rejected` with `multiple_reply_titles` or
+`ambiguous_existing_titles`. The same `patch_rejected` status covers detected
+reconstruction ambiguity, with warnings `ambiguous_text_rewrite`,
+`ambiguous_content_placement`, `unknown_content_reference`,
+`duplicate_content_reference`, or `content_reference_scope`.
+The current HTML is retained; the step counts as failed, keeps its raw
+reply/available usage, and later scheduled targets continue.
+The frontend shows the rejection as failed. Tracking checks still run before
+publishing an assembled candidate. No extra scans or retries are performed.
+
+Run `python -m unittest tests.test_root_content` from `backend/` for mixed content,
+wrapper expansion, content references, size limits, asset-comment order, entity
+round trips, title insertion/update, ambiguity rollback and runner continuation.
+These tests use controlled replies and do not establish benchmark improvements.
+The bounded root view and reconstruction/acceptance rules are part of the SDG
+method; comparisons with whole-document zero-shot repair measure the complete
+methods, not the isolated effect of semantic context.
 
 ## Candidates and fallback output
 
