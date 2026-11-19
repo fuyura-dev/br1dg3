@@ -240,7 +240,7 @@ function mapMetricsToCards(metricsDict, issuesBefore, issuesAfter) {
 
   const efficiencyStatus =
     cascadedCount > 0
-      ? { label: `${cascadedCount} Cascaded`, tone: "accent" }
+      ? { label: `${cascadedCount} Locally Skipped`, tone: "accent" }
       : { label: "Completed", tone: "accent" };
 
   // 5. Semantic Dependency Preservation (SDP_i)
@@ -302,7 +302,7 @@ function mapMetricsToCards(metricsDict, issuesBefore, issuesAfter) {
       ],
       detail: `${totalTokens.toLocaleString()} tokens ($${costUsd.toFixed(
         5
-      )} USD) · ${cascadedCount} of ${totalElements} skipped via cascade (${cascadeRate}%)`,
+      )} USD) · ${cascadedCount} of ${totalElements} scheduled targets locally skipped (${cascadeRate}%). Skips are not individually Axe-verified.`,
     },
     {
       id: "semantic",
@@ -379,9 +379,12 @@ function buildWorkspaceData(html, graphRes, repairRes = null) {
     const snippet = primaryIssue.html || `<${node.tag}>`;
 
     const rawStatus = step?.status || "open";
+    const isCascade = rawStatus === "cascade_skipped" || rawStatus === "cascade_resolved";
     const normalizedStatus =
-      rawStatus === "applied" || rawStatus === "cascade_resolved"
+      rawStatus === "applied"
         ? "applied"
+        : isCascade
+        ? "skipped"
         : rawStatus.startsWith("llm_") || ["empty_reply", "tracking_rejected", "patch_rejected", "prompt_too_large"].includes(rawStatus)
         ? "failed"
         : "open";
@@ -411,21 +414,23 @@ function buildWorkspaceData(html, graphRes, repairRes = null) {
     );
 
     if (step) {
-      const isCascade = step.status === "cascade_resolved";
+      const skippedRules = step.skipped_rules || [];
+      const skipDetails = skippedRules.map((item) => `${item.rule_id}: ${item.reason}`).join("; ");
+      const requestedRules = step.requested_rules ?? step.rules;
       const patchRejected = step.status === "tracking_rejected" || step.status === "patch_rejected";
       const promptTooLarge = step.status === "prompt_too_large";
       newRepairs[vId] = {
         strategy: promptTooLarge
           ? "Repair not generated"
           : isCascade
-          ? `Cascade Resolution (${step.rules.join(", ")})`
-          : `SDG-Guided LLM Repair (${step.rules.join(", ")})`,
+          ? `Local Cascade Skip (${step.rules.join(", ")})`
+          : `SDG-Guided LLM Repair (${requestedRules.join(", ")})`,
         change: promptTooLarge
           ? "No model call; previous HTML retained."
           : patchRejected
           ? "Patch rejected; previous HTML retained."
           : isCascade
-          ? "Resolved automatically by an ancestor landmark/container patch without an extra LLM call."
+          ? "No LLM call for this target; skipped by a local HTML check."
           : step.repaired_html || "Applied structural patch to element.",
         targetElement: `<${node.tag}> (${node.id})`,
         reason: promptTooLarge
@@ -435,8 +440,9 @@ function buildWorkspaceData(html, graphRes, repairRes = null) {
             ? "The proposed repair could not preserve unambiguous element tracking."
             : "The proposed repair could not be reconstructed unambiguously; the previous HTML was retained."
           : isCascade
-          ? "Topological dependency ordering repaired the enclosing ancestor first, satisfying this element's requirement automatically."
-          : `Patched using localized SDG subgraph context (${step.related_relationships?.length || 0} dependency edges).`,
+          ? `${skipDetails || "Historical local skip; no detailed evidence recorded."} This skip was not individually verified by Axe.`
+          : `Patched using localized SDG subgraph context (${step.related_relationships?.length || 0} dependency edges).${skipDetails ? ` Locally skipped rules: ${skipDetails} These skips were not individually verified by Axe.` : ""}`,
+        skippedRules,
         relatedRelationships: step.related_relationships || [],
         status: normalizedStatus,
       };

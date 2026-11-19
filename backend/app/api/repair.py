@@ -64,8 +64,8 @@ def _summarize(request: "RepairRequest", run, issues_before: int, issues_after: 
         return f"No accepted repair candidate; fallback HTML returned. {run.failed_steps} failed steps, {run.unmapped} unmapped, {tail}."
     if request.use_sdg:
         applied = sum(1 for s in run.steps if s.status == "applied")
-        cascaded = sum(1 for s in run.steps if s.status == "cascade_resolved")
-        return f"SDG repair ({run.generation_status}): {applied} patched, {cascaded} cascaded, {run.failed_steps} failed, {len(run.steps)} total elements, {run.unmapped} unmapped, {tail}."
+        cascaded = sum(1 for s in run.steps if s.status in {"cascade_skipped", "cascade_resolved"})
+        return f"SDG repair ({run.generation_status}): {applied} patched, {cascaded} locally skipped (not individually Axe-verified), {run.failed_steps} failed, {len(run.steps)} total elements, {run.unmapped} unmapped, {tail}."
     step = run.steps[0] if run.steps else None
     return f"Baseline repair: {step.status if step else 'no_violations'}, {tail}."
 
@@ -78,6 +78,8 @@ def _serialize_steps(run) -> list[dict[str, Any]]:
             "node_id": s.node_id,
             "tag": s.tag,
             "rules": s.rules,
+            "requested_rules": s.requested_rules,
+            "skipped_rules": s.skipped_rules,
             "status": s.status,
             "repaired_html": s.llm.text.strip() if s.llm and s.llm.text else None,
             "raw_reply": s.llm.text if s.llm is not None else None,

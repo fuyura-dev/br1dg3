@@ -37,6 +37,58 @@ containment, reference directions, paths through unaffected nodes, cycle
 handling, stable ties, graph isolation and runner integration. Generation is
 mocked; these checks do not measure repair effectiveness on the benchmark.
 
+## Local cascade skips
+
+The runner may omit a scheduled rule only after an earlier patch was accepted
+and a supported local condition is present in the current HTML but was absent
+in the prepared original. It never skips the first target merely because a
+local predicate disagrees with the initial scan. A failed/rejected patch does
+not change the HTML used by these checks; an unchanged condition cannot justify
+a skip. Conditions are checked again when the target is reached, so an earlier
+temporary improvement is insufficient if a later patch removed it.
+
+The supported conditions are deliberately narrower than Axe:
+
+| Rule | Supported current condition |
+| --- | --- |
+| `region` | Target is in a native `main`, `nav`, `aside`, or `search` landmark without an explicit overriding role, or an element with the single role `main`, `navigation`, `complementary`, `search`, `banner`, or `contentinfo`. Hidden/inert/ARIA-hidden ancestry does not justify this skip. |
+| `listitem` | An unroled `li` has a direct `ul`, `ol`, or `menu` parent whose role is absent or `list`. Arbitrary intervening ancestors do not qualify. |
+| `dlitem` | An unroled `dt`/`dd` has a `dl` parent, directly or through one unroled `div` group. The `dl` role must be absent or `list`. |
+| `aria-hidden-focus` | The original ARIA hiding condition is gone: target and ancestors have no `aria-hidden` attribute or the value `false`. The check does not infer focusability from CSS, `tabindex`, disabled controls, or event handlers. |
+
+Named landmarks, contextual native header/footer landmarks, fallback role lists,
+and unsupported cases remain scheduled. The SDG's broader landmark extractor
+still supplies context; its graph edges are not used as proof of rule validity.
+These checks operate on the parsed snapshot, not the rendered/composed browser
+DOM. They are **local inferences, not rule-equivalent Axe checks**. Reference
+material includes the pinned [Axe description-list check](https://github.com/dequelabs/axe-core/blob/v4.10.3/lib/checks/lists/dlitem-evaluate.js),
+and Deque's [landmark](https://dequeuniversity.com/rules/axe/4.10/region) and
+[ARIA hiding](https://dequeuniversity.com/rules/axe/4.10/aria-hidden-focus) guidance.
+
+Each step retains its original `rules`. `skipped_rules` records the rule ID,
+reason, `basis: changed_from_original`, and `verification: local_dom_only`.
+`requested_rules` records rules passed to `generate()`, even if generation
+raises; it is empty when no generation was attempted. When only some rules
+qualify for skipping, the actual target prompt contains the remaining rules,
+without altering the original issue table. The skip evidence describes the
+pre-attempt state, not verification of the subsequent output.
+
+A fully skipped target emits `cascade_skipped` and makes no model call. It is
+neither a generated patch nor a failed generation. The legacy status
+`cascade_resolved` remains readable for historical records, without upgrading
+those old inferences to verified results. The API, saved scan-failure records,
+dashboard and terminal retain this distinction. `cascaded_count` and
+`cascade_rate` keep their existing field names: they count whole targets skipped
+and their percentage among scheduled target elements. Partial rule suppression
+does not count as a whole-target skip. Neither value measures violations fixed
+or percentage cost savings. Final scan results remain the accessibility evidence.
+
+No per-patch scans, extra repair retries, graph-definition changes or schedule
+changes are introduced. The narrower policy may increase LLM usage; benchmark
+improvements are not assumed. Run `python -m unittest tests.test_repair_cascade`
+for controlled condition, transition, prompt-filtering, reporting and continuation
+tests. Browser-level equivalence is not claimed.
+
 ## Tracking checks before patch application
 
 `apply_reply()` checks the target and all tracked descendants before changing
@@ -197,7 +249,8 @@ Run status is determined from accepted steps, not HTML equality:
 - `not_needed`: no violations required repair. No model output is claimed and
   this is not a generation failure.
 
-`cascade_resolved` and `element_gone` are skips, not failed generation steps.
+`cascade_skipped` (historically `cascade_resolved`) and `element_gone` are skips,
+not failed generation steps.
 They alone do not create a candidate. An accepted reply identical to its input
 does create a candidate and remains eligible for evaluation. Partial candidates
 retain their assembled output and every step's status; one failed step does not

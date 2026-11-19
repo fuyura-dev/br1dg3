@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Any
 
+from app.services.repair.cascade import CASCADE_SKIP_STATUSES
+
 DEFAULT_PROMPT_PRICE_PER_M = 0.075
 DEFAULT_COMPLETION_PRICE_PER_M = 0.30
 
@@ -107,7 +109,8 @@ def calculate_efficiency_from_run(
         run, "thought_tokens", sum(getattr(s.llm, "thought_tokens", 0) for s in steps if getattr(s, "llm", None))
     )
 
-    cascaded_count = sum(1 for s in steps if getattr(s, "status", "") == "cascade_resolved")
+    # Whole-target local skips only; neither verified repairs nor cost savings.
+    cascaded_count = sum(1 for s in steps if getattr(s, "status", "") in CASCADE_SKIP_STATUSES)
     patched_count = sum(1 for s in steps if getattr(s, "status", "") == "applied")
     total_elements = len(steps)
 

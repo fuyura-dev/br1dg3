@@ -1,6 +1,11 @@
 from dataclasses import dataclass, field
 
 from app.services.detection.preprocess import preprocess
+from app.services.repair.cascade import (
+    CASCADE_SKIP_STATUSES,
+    infer_skips,
+    supported_condition,
+)
 from app.services.repair.context import ContextExtractor
 from app.services.repair.llm import LLMResult, generate
 from app.services.repair.log_streamer import streamer
@@ -22,8 +27,8 @@ from app.services.sdg.builder import SDGBuilder
 class Step:
     token: str
     tag: str | None
-    rules: list[str]
-    status: str        # applied | element_gone | llm_error | llm_not_ok:<status> | empty_reply | no_element | tracking_rejected | patch_rejected | prompt_too_large
+    rules: list[str]   # original reported rules; never overwritten by local skip checks
+    status: str        # applied | cascade_skipped | element_gone | llm_error | llm_not_ok:<status> | empty_reply | no_element | tracking_rejected | patch_rejected | prompt_too_large
     warnings: list[str] = field(default_factory=list)
     node_id: str | None = None          # the node id AT THAT STEP (ids shift as patches are applied)
     original_node_id: str | None = None
@@ -31,6 +36,8 @@ class Step:
     llm: LLMResult | None = None
     error: str | None = None
     candidate_html: str | None = None  # accepted reply/patch before document assembly
+    requested_rules: list[str] = field(default_factory=list)  # passed to generate(), even if it raises
+    skipped_rules: list[dict[str, str]] = field(default_factory=list)  # local inference, not verified repair
 
 
 @dataclass
@@ -55,7 +62,7 @@ class RepairRun:
     @property
     def failed_steps(self):
         return sum(
-            s.status not in {"applied", "cascade_resolved", "element_gone"}
+            s.status not in {"applied", "element_gone"} | CASCADE_SKIP_STATUSES
             for s in self.steps
         )
 
@@ -108,59 +115,7 @@ def _pending_violations(pending, table):
     ]
 
 
-def _is_landmark(el) -> bool:
-    """Check if an element qualifies as a WCAG/Axe landmark."""
-    if not hasattr(el, "name") or el.name is None:
-        return False
-    name = el.name.lower()
-    role = el.get("role", "").lower() if hasattr(el, "get") else ""
-
-    # Explicit ARIA landmark roles
-    if role in {"main", "navigation", "complementary", "search", "banner", "contentinfo"}:
-        return True
-    if role in {"region", "form"}:
-        return bool(el.get("aria-label") or el.get("aria-labelledby"))
-
-    # HTML5 tags
-    if name in {"main", "nav", "aside"}:
-        return True
-    if name in {"header", "footer"}:
-        # header and footer are landmarks (banner/contentinfo) ONLY if
-        # not a descendant of article, aside, main, nav, or section
-        sectioning = {"article", "aside", "main", "nav", "section"}
-        return not any(getattr(p, "name", "").lower() in sectioning for p in el.parents)
-    if name in {"section", "form"}:
-        return bool(el.get("aria-label") or el.get("aria-labelledby"))
-
-    return False
-
-
-
-
-def _is_already_satisfied(target, rule_id: str) -> bool:
-    """Check if a structural violation was fixed by a previous patch (cascade resolution)."""
-    ancestors = [target] + list(target.parents)
-    if rule_id == "region":
-        return any(_is_landmark(el) for el in ancestors)
-    elif rule_id == "listitem":
-        for el in target.parents:
-            if getattr(el, "name", "") in {"ul", "ol"} or getattr(el, "get", lambda k: None)("role") == "list":
-                return True
-        return False
-    elif rule_id == "dlitem":
-        for el in target.parents:
-            if getattr(el, "name", "") == "dl":
-                return True
-        return False
-    elif rule_id == "aria-hidden-focus":
-        for el in ancestors:
-            if getattr(el, "get", lambda k: None)("aria-hidden") == "true":
-                return False
-        return True
-    return False
-
-
-def _step(current, token, table, pending):
+def _step(current, token, table, pending, original_conditions, *, has_accepted_patch):
     """One repair step on the current document. Returns (Step, new current document)."""
     rules = [issue["id"] for issue in table[token]]
     builder = SDGBuilder(current, _pending_violations(pending, table))     # re-parse: ids are fresh
@@ -170,25 +125,23 @@ def _step(current, token, table, pending):
 
     node_id = builder.element_to_id[target]
 
-    # Cascade resolution check
-    satisfactions = {r: _is_already_satisfied(target, r) for r in rules}
-    if all(satisfactions.values()):
-        streamer.log(f"[CASCADE RESOLVED {token}] <{target.name}> | Rules: {rules}")
-        return Step(token, target.name, rules, "cascade_resolved", node_id=node_id), current
+    skipped = infer_skips(target, rules, original_conditions, has_accepted_patch=has_accepted_patch)
+    skipped_ids = {item["rule_id"] for item in skipped}
+    step = Step(token, target.name, rules, "", node_id=node_id, skipped_rules=skipped)
+    if skipped_ids == set(rules):
+        step.status = "cascade_skipped"
+        streamer.log(f"[CASCADE SKIPPED {token}] <{target.name}> | Rules: {rules} | Local inference: {skipped}")
+        return step, current
 
-    # If some (but not all) rules were already resolved by ancestors, filter them out
-    # so the prompt only asks the LLM to repair the remaining unresolved violations.
-    active_issues = [issue for issue in table[token] if not satisfactions.get(issue["id"], False)]
-    if len(active_issues) < len(table[token]):
-        table[token] = active_issues
-        rules = [issue["id"] for issue in active_issues]
+    active_issues = [issue for issue in table[token] if issue["id"] not in skipped_ids]
+    active_rules = [issue["id"] for issue in active_issues]
 
     parent_names = [getattr(p, "name", "") for p in target.parents if getattr(p, "name", None)]
-    streamer.log(f"[NOT CASCADED {token}] <{target.name}> | Rules: {rules} | Satisfied: {satisfactions} | Parents: {parent_names[:4]}")
-
-    step = Step(token, target.name, rules, "", node_id=node_id)
+    streamer.log(f"[NOT CASCADED {token}] <{target.name}> | Requested rules: {active_rules} | Locally skipped: {skipped} | Parents: {parent_names[:4]}")
 
     ctx = ContextExtractor.from_builder(builder).extract(node_id)
+    # Filter the actual target prompt, while retaining the original issue table.
+    ctx.nodes[node_id]["issues"] = active_issues
     step.related_relationships = [
         f"{d.get('relation')}: {ctx.nodes[u].get('label', u)} -> {ctx.nodes[v].get('label', v)}"
         for u, v, d in ctx.edges(data=True)
@@ -200,11 +153,12 @@ def _step(current, token, table, pending):
         streamer.log(f"[STEP {token}] Root prompt rejected: {exc}")
         return step, current
     streamer.log(
-        f"[STEP {token}] Target: <{target.name}> | Rules: {rules} | "
+        f"[STEP {token}] Target: <{target.name}> | Rules: {active_rules} | "
         f"Prompt Size: {len(sdg_prompt.user) + len(sdg_prompt.system)} chars (~{(len(sdg_prompt.user) + len(sdg_prompt.system)) // 4} est tokens)"
     )
 
     try:
+        step.requested_rules = active_rules
         step.llm = generate(sdg_prompt)
     except Exception as exc:                                               # noqa: BLE001
         step.status, step.error = "llm_error", f"{type(exc).__name__}: {exc}"
@@ -248,6 +202,11 @@ def run_sdg(html, violations):
         builder.element_to_id.element(node)[MARKER] = token
         table[token] = graph.nodes[node]["issues"]
     current = outer_html(builder.soup)
+    original_conditions = {
+        token: {issue["id"]: supported_condition(builder.element_to_id.element(node), issue["id"])
+                for issue in table[token]}
+        for node, token in tokens.items()
+    }
 
     # 2. Fixed initial schedule: SDG dependencies plus DOM containment, kept
     # separate from the graph used for context and semantic measurements.
@@ -256,8 +215,12 @@ def run_sdg(html, violations):
 
     # 3. one violated element per prompt, each on the CURRENT document
     pending, steps = set(table), []
+    has_accepted_patch = False
     for token in order:
-        step, current = _step(current, token, table, pending)
+        step, current = _step(
+            current, token, table, pending, original_conditions[token], has_accepted_patch=has_accepted_patch,
+        )
+        has_accepted_patch = has_accepted_patch or step.status == "applied"
         step.original_node_id = orig_by_token.get(token)
         pending.discard(token)
         steps.append(step)
@@ -273,7 +236,9 @@ def run_baseline(html, violations):
 
     step = Step("baseline", None, [v.get("id") for v in violations], "")
     try:
-        step.llm = generate(build_baseline_prompt(html, violations))
+        baseline_prompt = build_baseline_prompt(html, violations)
+        step.requested_rules = list(step.rules)
+        step.llm = generate(baseline_prompt)
     except Exception as exc:                                              # noqa: BLE001
         step.status, step.error = "llm_error", f"{type(exc).__name__}: {exc}"
         return RepairRun(html, [step], 0)

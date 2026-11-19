@@ -109,6 +109,15 @@ acceptance is not a guarantee of conformance or accessibility success.
 `raw_reply` and accepted `candidate_html`; the older `repaired_html` field
 continues to contain trimmed model reply text, including rejected replies.
 
+Each step's `rules` retains the original reported rule IDs. `requested_rules`
+lists the rules passed to generation (including a call that raises), and is empty
+when no generation was attempted. `skipped_rules` contains local cascade evidence:
+`rule_id`, `reason`, `basis: "changed_from_original"`, and
+`verification: "local_dom_only"`. A fully skipped target uses `cascade_skipped`;
+partial rule skips retain the status of the attempted generation/patch. Neither
+is per-target Axe verification. The initial and final scan policy is unchanged.
+See the [local skip policy](../services/repair/README.md#local-cascade-skips).
+
 When no candidate was accepted, metrics explicitly assign no repair credit and
 set `metrics.evaluation.score_basis` to `no_candidate_failure_policy`.
 Available usage remains recorded. Top-level `issues_after` still describes the

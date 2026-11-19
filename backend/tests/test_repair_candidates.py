@@ -213,7 +213,9 @@ class TestRepairCandidates(unittest.TestCase):
 
     def test_sdg_all_skipped_targets_are_not_generated_candidates(self):
         html = '<main><p id="text">Text</p></main>'
-        run = runner.run_sdg(html, [self._violation("region", "#text")])
+        # Historical all-skip records still do not establish a generated candidate.
+        # New runs require an earlier accepted patch before inferring any skip.
+        run = runner.RepairRun(html, [runner.Step("v1", "p", ["region"], "cascade_resolved")], 0)
         self.generate.assert_not_called()
         self.assertEqual(run.steps[0].status, "cascade_resolved")
         self.assertEqual(run.failed_steps, 0)

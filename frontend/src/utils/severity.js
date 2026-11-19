@@ -16,6 +16,7 @@ export const STATUS_META = {
   failed: { label: "Failed", color: "var(--color-critical)", soft: "var(--color-critical-soft)" },
   open: { label: "Open", color: "var(--color-warning)", soft: "var(--color-warning-soft)" },
   applied: { label: "Applied", color: "var(--color-success)", soft: "var(--color-success-soft)" },
+  skipped: { label: "Skipped · unverified", color: "var(--color-warning)", soft: "var(--color-warning-soft)" },
 };
 
 export function getStatusMeta(status) {

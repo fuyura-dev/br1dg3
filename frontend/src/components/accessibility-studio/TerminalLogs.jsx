@@ -14,9 +14,9 @@ const IconCascade = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="
 function parseLogLine(log) {
   if (!log || typeof log !== 'string') return { type: 'raw', content: String(log) };
 
-  // 1. Cascade Resolved
-  if (log.includes('[CASCADE RESOLVED')) {
-    const match = log.match(/\[CASCADE RESOLVED (.*?)\] <(.*?)> \| Rules: \[(.*?)\]/);
+  // 1. Local cascade inference (also recognize historical log lines).
+  if (log.includes('[CASCADE SKIPPED') || log.includes('[CASCADE RESOLVED')) {
+    const match = log.match(/\[CASCADE (?:SKIPPED|RESOLVED) (.*?)\] <(.*?)> \| Rules: \[(.*?)\]/);
     if (match) return { type: 'cascade', token: match[1], tag: match[2], rules: match[3].replace(/['"]/g, ''), raw: log };
   }
 
@@ -88,9 +88,9 @@ function LogItem({ item }) {
   switch (item.type) {
     case 'cascade':
       icon = <IconCascade />;
-      title = <span>Auto-resolved <code>&lt;{item.tag}&gt;</code></span>;
+      title = <span>Locally skipped <code>&lt;{item.tag}&gt;</code></span>;
       badge = <span className="log-badge badge-warning">{item.token}</span>;
-      content = `Satisfied rule: ${item.rules}`;
+      content = `Rules: ${item.rules}. Local inference; not individually verified by Axe.`;
       break;
     case 'analysis':
       icon = <IconAnalyze />;
@@ -268,7 +268,7 @@ function TerminalLogs({ isRepairing }) {
                   <div className="timeline-header">
                     <div className="timeline-title-wrap">
                       <span className="log-badge badge-success">DONE</span>
-                      <div className="timeline-title">All AI Repairs Completed Successfully</div>
+                      <div className="timeline-title">Repair processing finished</div>
                     </div>
                   </div>
                 </div>
