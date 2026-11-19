@@ -13,6 +13,7 @@ from app.services.repair.root_view import (
     RootViewTooLarge,
     content_references,
 )
+from app.services.repair.scope import EditScope, select_scope
 
 VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
 
@@ -21,6 +22,7 @@ VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link",
 class Prompt:
     system: str
     user: str
+    edit_scope: EditScope | None = None
 
 
 # ------------------------------------------------------------------ shared pieces
@@ -69,14 +71,19 @@ elements that shows how the target connects to the rest of the page (labels, ARI
 headings, landmarks, form groups, parents, focus order).
 Relationships are written as arrows: `[A] --relation--> [B]` means A has that relation to B, and a chain
 such as `[A] --r1--> [B] --r2--> [C]` follows the arrows. The relation name describes the connection.
-Return ONLY the HTML that replaces the target. Normally this is the repaired target element itself.
-You may add sibling elements, or wrap the target, when the repair requires it.
+Return ONLY a JSON object with exactly two keys: "scope" and "html".
+Use "scope": "target" for a replacement of [T], or "scope": "block" for the complete editable
+block [B] when one is offered and existing surrounding elements must change.
+Prefer target scope for changes confined to [T]; do not repeat the block unnecessarily.
+The "html" value must be a JSON string containing the replacement HTML, with proper escaping.
+Target replacements may wrap the target or add new siblings in its existing slot.
+Block replacements must contain one complete root element and preserve unrelated content.
 
 Rules:
 {COMMON_RULES}
-- Do not change the target's id attribute; other elements refer to it.
-- Keep every {MARKER} attribute exactly as it is, on the target and on any child element (internal tracking marker).
-- The related elements are read-only context. Do not output them. Use them so the fix fits the page
+- Preserve existing IDs and every {MARKER} attribute on its original element throughout the editable scope.
+- Only [T], or the explicitly offered block [B], is editable. Related elements outside that scope
+  are read-only context. Do not output them. Use them so the fix fits the page
   (for example reuse existing label or heading text, keep landmark names distinct)."""
 
 # Relations whose edges form a path DOWN to the target. Each family is printed as ONE chain,
@@ -256,41 +263,66 @@ def build_sdg_prompt(ctx, element_ids):
 
     target_el = element_ids.element(target)
     title_issue = target_el.name == "html" and any(issue.get("id") == "document-title" for issue in issues)
+    root_markup = None
     if target_el.name == "html":
-        target_markup = _shallow_layout_tree(target_el, max_depth=2, show_title=title_issue)
+        root_markup = _shallow_layout_tree(target_el, max_depth=2, show_title=title_issue)
     elif target_el.name == "body":
-        target_markup = _shallow_layout_tree(target_el, max_depth=1)
-    else:
-        target_markup = outer_html(target_el)
+        root_markup = _shallow_layout_tree(target_el, max_depth=1)
+    scope = select_scope(target_el, root_markup=root_markup)
+    target_markup = scope.target_markup
+    if scope.block is not None and target_el.get(MARKER):
+        # Show the target's locator; its complete markup appears once in [B].
+        target_markup = f'<{target_el.name} {MARKER}="{escape(target_el[MARKER], quote=True)}">'
+        if target_el.name not in VOID_TAGS:
+            target_markup += f'</{target_el.name}>'
 
     parts = [
         "## Violations on the target element\n" + violations,
         f"## Target element [T]\n{target_markup}",
     ]
+    if scope.block is not None:
+        parts.append(f"## Editable block [B]\n{scope.block_markup}")
+        parts.append(
+            "## Scope permissions\n"
+            "The target entry is a locator when it carries a tracking marker; [B] contains its complete markup. "
+            "You may change [T] alone, or its immediate-parent block [B] including existing siblings, "
+            "only as needed for the reported target violations. Other elements' own violations remain scheduled separately. "
+            "Return scope=target for target-only edits, or scope=block with the complete single-root block for surrounding edits. "
+            "Do not shorten ordinary target/block markup with ellipses or omit unchanged content, attributes or asset placeholders."
+        )
+    else:
+        parts.append(
+            "## Scope permissions\n"
+            "Only scope=target is allowed. No surrounding block is editable. "
+            "Return the replacement HTML for [T] inside the JSON html string."
+        )
     if title_issue:
         parts.append(
             "## Document title repair\n"
-            "Return one complete <title> inside <head> in the <html> reply; do not collapse its text with …. "
+            "In the JSON html string, return one complete <title> inside <head> in the <html> reply; do not collapse its text with …. "
             "A content reference may be retained unchanged to preserve an existing long title. "
             "Add <head> or <title> if absent. Other head content is omitted from this view and will be preserved."
         )
 
     if others:
-        lines = []
+        editable_lines, readonly_lines = [], []
         for n in others:
             line = f"{label[n]} {_snippet(element_ids.element(n))}"
             own = [v.get("id") for v in ctx.nodes[n].get("issues", [])]
             if own:
-                line += f"   (has its own violation: {', '.join(own)}; handled separately, do not change)"
-            lines.append(line)
-        parts.append("## Related elements (read-only)\n" + "\n".join(lines))
+                line += f"   (has its own violation: {', '.join(own)}; scheduled separately)"
+            (editable_lines if scope.contains(element_ids.element(n)) else readonly_lines).append(line)
+        if editable_lines:
+            parts.append("## Related elements inside the editable scope\n" + "\n".join(editable_lines))
+        if readonly_lines:
+            parts.append("## Related elements (read-only)\n" + "\n".join(readonly_lines))
         parts.append("## Relationships\n" + "\n".join(_relationship_lines(ctx, target, label)))
     else:
         parts.append("## Related elements\nNone found.")
 
     if target_el.name in {"html", "body"}:
         parts.append(
-            "Return only the HTML that replaces [T]. "
+            "Use scope=target and put the shortened root replacement in the JSON html string. "
             "To change attributes on <html> or <body>, return that tag explicitly. "
             "Keep every unchanged shown attribute; omitting a shown attribute from that tag removes it. "
             "Attributes hidden from this view (class, style, data-*) are preserved when omitted. "
@@ -302,8 +334,8 @@ def build_sdg_prompt(ctx, element_ids):
             "Keep inner section contents collapsed with … to keep the response concise."
         )
     else:
-        parts.append("Return only the HTML that replaces [T].")
-    return Prompt(SDG_SYSTEM, "\n\n".join(parts))
+        parts.append('Return only a JSON object such as {"scope":"target","html":"replacement HTML"}; use "block" only when offered.')
+    return Prompt(SDG_SYSTEM, "\n\n".join(parts), scope)
 
 
 if __name__ == "__main__":

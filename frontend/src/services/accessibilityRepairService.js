@@ -385,7 +385,7 @@ function buildWorkspaceData(html, graphRes, repairRes = null) {
         ? "applied"
         : isCascade
         ? "skipped"
-        : rawStatus.startsWith("llm_") || ["empty_reply", "tracking_rejected", "patch_rejected", "prompt_too_large"].includes(rawStatus)
+        : rawStatus.startsWith("llm_") || ["empty_reply", "no_element", "invalid_reply", "tracking_rejected", "patch_rejected", "prompt_too_large"].includes(rawStatus)
         ? "failed"
         : "open";
 
@@ -417,32 +417,33 @@ function buildWorkspaceData(html, graphRes, repairRes = null) {
       const skippedRules = step.skipped_rules || [];
       const skipDetails = skippedRules.map((item) => `${item.rule_id}: ${item.reason}`).join("; ");
       const requestedRules = step.requested_rules ?? step.rules;
-      const patchRejected = step.status === "tracking_rejected" || step.status === "patch_rejected";
+      const patchRejected = ["tracking_rejected", "patch_rejected", "invalid_reply", "no_element"].includes(step.status);
       const promptTooLarge = step.status === "prompt_too_large";
       newRepairs[vId] = {
         strategy: promptTooLarge
           ? "Repair not generated"
           : isCascade
           ? `Local Cascade Skip (${step.rules.join(", ")})`
-          : `SDG-Guided LLM Repair (${requestedRules.join(", ")})`,
+          : `SDG-Guided ${step.reply_scope === "block" ? "Block" : "Target"} Repair (${requestedRules.join(", ")})`,
         change: promptTooLarge
           ? "No model call; previous HTML retained."
           : patchRejected
           ? "Patch rejected; previous HTML retained."
           : isCascade
           ? "No LLM call for this target; skipped by a local HTML check."
-          : step.repaired_html || "Applied structural patch to element.",
+          : step.candidate_html || step.reply_html || step.repaired_html || "Applied structural patch to element.",
         targetElement: `<${node.tag}> (${node.id})`,
         reason: promptTooLarge
-          ? "Root markup exceeded the configured size limit."
+          ? "The repair input exceeded the configured scope limit."
           : patchRejected
           ? step.status === "tracking_rejected"
             ? "The proposed repair could not preserve unambiguous element tracking."
-            : "The proposed repair could not be reconstructed unambiguously; the previous HTML was retained."
+            : "The reply did not satisfy the repair format, scope or reconstruction checks; the previous HTML was retained."
           : isCascade
           ? `${skipDetails || "Historical local skip; no detailed evidence recorded."} This skip was not individually verified by Axe.`
           : `Patched using localized SDG subgraph context (${step.related_relationships?.length || 0} dependency edges).${skipDetails ? ` Locally skipped rules: ${skipDetails} These skips were not individually verified by Axe.` : ""}`,
         skippedRules,
+        replyScope: step.reply_scope || null,
         relatedRelationships: step.related_relationships || [],
         status: normalizedStatus,
       };

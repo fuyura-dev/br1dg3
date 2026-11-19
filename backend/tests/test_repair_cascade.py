@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 from app.services.repair import failed_runs
 from app.services.repair.cascade import infer_skips, supported_condition
 from app.services.validation.efficiency import calculate_efficiency_from_run
+from tests.repair_fixtures import sdg_reply, target_from_prompt
 
 with patch("google.genai.Client"):
     from app.api.repair import RepairRequest, _serialize_steps, _summarize
@@ -125,13 +126,12 @@ class TestCascadeRunner(unittest.TestCase):
 
         def generate(prompt):
             self.prompts.append(prompt.user)
-            markup = prompt.user.split("## Target element [T]\n", 1)[1].split("\n\n##", 1)[0]
-            target = BeautifulSoup(markup, "html.parser").find(True)
+            target = target_from_prompt(prompt)
             if target.get("id") == "parent":
                 change_parent(target)
                 if reject_parent:
-                    return self.reply("not HTML")
-            return self.reply(str(target))
+                    return self.reply(sdg_reply("not HTML"))
+            return self.reply(sdg_reply(str(target)))
 
         self.generate.side_effect = generate
         return runner.run_sdg(html, violations)
@@ -146,7 +146,7 @@ class TestCascadeRunner(unittest.TestCase):
         for html, rule in cases:
             with self.subTest(rule=rule):
                 self.generate.reset_mock()
-                self.generate.return_value = self.reply("not HTML")
+                self.generate.return_value = self.reply(sdg_reply("not HTML"))
                 run = runner.run_sdg(html, [self.violation(rule, "#child")])
                 self.generate.assert_called_once()
                 self.assertEqual(run.steps[0].status, "no_element")
@@ -257,13 +257,12 @@ class TestCascadeRunner(unittest.TestCase):
 
     def test_later_patch_can_remove_the_condition_before_child_is_reached(self):
         def generate(prompt):
-            markup = prompt.user.split("## Target element [T]\n", 1)[1].split("\n\n##", 1)[0]
-            target = BeautifulSoup(markup, "html.parser").find(True)
+            target = target_from_prompt(prompt)
             if target["id"] == "outer":
                 target.find(id="parent").name = "main"
             elif target["id"] == "parent":
                 target.name = "section"
-            return self.reply(str(target))
+            return self.reply(sdg_reply(str(target)))
         self.generate.side_effect = generate
         run = runner.run_sdg(
             '<div id="outer"><div id="parent"><p id="child">Text</p></div></div>',
@@ -286,10 +285,9 @@ class TestCascadeRunner(unittest.TestCase):
     def test_failed_generation_keeps_original_requested_and_locally_skipped_rules(self):
         def generate(prompt):
             if self.generate.call_count == 1:
-                markup = prompt.user.split("## Target element [T]\n", 1)[1].split("\n\n##", 1)[0]
-                target = BeautifulSoup(markup, "html.parser").div
+                target = target_from_prompt(prompt)
                 target.name = "main"
-                return self.reply(str(target))
+                return self.reply(sdg_reply(str(target)))
             raise RuntimeError("Controlled failure")
         self.generate.side_effect = generate
         run = runner.run_sdg(

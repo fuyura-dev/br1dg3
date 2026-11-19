@@ -5,6 +5,7 @@ from unittest.mock import patch
 from app.api import evaluate as evaluate_api
 from app.services.detection.detect import ScanResult
 from app.services.validation.evaluator import MissingInitialScanError, evaluate_repair
+from tests.repair_fixtures import sdg_reply
 
 with patch("google.genai.Client"):
     from app.api import repair as repair_api
@@ -165,7 +166,7 @@ class TestRepairCandidates(unittest.TestCase):
     def test_sdg_partial_candidate_survives_a_later_failed_step(self):
         def generate(prompt):
             if self.generate.call_count == 1:
-                return self._reply('<img id="photo" src="photo.png" alt="Photo">')
+                return self._reply(sdg_reply('<img id="photo" src="photo.png" alt="Photo">'))
             return self._reply("not HTML")
 
         self.generate.side_effect = generate
@@ -188,7 +189,7 @@ class TestRepairCandidates(unittest.TestCase):
         self.assertEqual(report.efficiency.api_calls, 2)
 
     def test_sdg_accepted_unchanged_patch_still_produces_candidate(self):
-        self.generate.return_value = self._reply('<img id="photo" src="photo.png">')
+        self.generate.return_value = self._reply(sdg_reply('<img id="photo" src="photo.png">'))
         run = runner.run_sdg(self.html, self.violations)
         self.assertEqual(run.generation_status, "accepted")
         self.assertFalse(run.fallback_used)
@@ -202,7 +203,7 @@ class TestRepairCandidates(unittest.TestCase):
         self._assert_no_credit(self._evaluate(run))
 
     def test_sdg_candidate_with_unmapped_targets_is_partial(self):
-        self.generate.return_value = self._reply('<img id="photo" src="photo.png" alt="Photo">')
+        self.generate.return_value = self._reply(sdg_reply('<img id="photo" src="photo.png" alt="Photo">'))
         run = runner.run_sdg(
             self.html, self.violations + [self._violation("button-name", "#missing")],
         )

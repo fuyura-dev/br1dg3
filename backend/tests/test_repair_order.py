@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 
 from app.services.repair.order import dependency_view, order_violations_by_dependency
 from app.services.sdg.builder import SDGBuilder
+from tests.repair_fixtures import sdg_reply, target_from_prompt
 
 with patch("google.genai.Client"):
     from app.services.repair import runner
@@ -192,8 +193,7 @@ class TestRepairOrderIntegration(unittest.TestCase):
 
         def generate(prompt):
             prompts.append(prompt.user)
-            markup = prompt.user.split("## Target element [T]\n", 1)[1].split("\n\n##", 1)[0]
-            target = BeautifulSoup(markup, "html.parser").find(True)
+            target = target_from_prompt(prompt)
             targets.append(target["id"])
             target.attrs.pop("aria-bogus", None)
             if target["id"] == "description":
@@ -202,7 +202,7 @@ class TestRepairOrderIntegration(unittest.TestCase):
                 target["title"] = "Updated container"
             else:
                 target["alt"] = "Photo"
-            return self._reply(str(target))
+            return self._reply(sdg_reply(str(target)))
 
         self.generate.side_effect = generate
         with patch.object(runner, "order_violations_by_dependency", wraps=order_violations_by_dependency) as order:

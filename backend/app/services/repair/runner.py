@@ -12,14 +12,14 @@ from app.services.repair.log_streamer import streamer
 from app.services.repair.order import dependency_view, order_violations_by_dependency
 from app.services.repair.patch import (
     MARKER,
-    apply_reply,
-    clean_reply,
+    PatchResult,
     outer_html,
     parse_document_reply,
     strip_markers,
 )
 from app.services.repair.prompt import build_baseline_prompt, build_sdg_prompt
 from app.services.repair.root_view import RootViewTooLarge
+from app.services.repair.scope import apply_scoped_reply, parse_scoped_reply
 from app.services.sdg.builder import SDGBuilder
 
 
@@ -28,7 +28,7 @@ class Step:
     token: str
     tag: str | None
     rules: list[str]   # original reported rules; never overwritten by local skip checks
-    status: str        # applied | cascade_skipped | element_gone | llm_error | llm_not_ok:<status> | empty_reply | no_element | tracking_rejected | patch_rejected | prompt_too_large
+    status: str        # applied | cascade_skipped | element_gone | llm_error | llm_not_ok:<status> | empty_reply | invalid_reply | no_element | tracking_rejected | patch_rejected | prompt_too_large
     warnings: list[str] = field(default_factory=list)
     node_id: str | None = None          # the node id AT THAT STEP (ids shift as patches are applied)
     original_node_id: str | None = None
@@ -38,6 +38,9 @@ class Step:
     candidate_html: str | None = None  # accepted reply/patch before document assembly
     requested_rules: list[str] = field(default_factory=list)  # passed to generate(), even if it raises
     skipped_rules: list[dict[str, str]] = field(default_factory=list)  # local inference, not verified repair
+    edit_scope: dict | None = None     # selected input scope and limits, without live DOM objects
+    reply_scope: str | None = None     # declared scope, including a subsequently rejected patch
+    reply_html: str | None = None      # decoded HTML payload; raw JSON remains in llm.text
 
 
 @dataclass
@@ -150,8 +153,9 @@ def _step(current, token, table, pending, original_conditions, *, has_accepted_p
         sdg_prompt = build_sdg_prompt(ctx, builder.element_to_id)
     except RootViewTooLarge as exc:
         step.status, step.error = "prompt_too_large", str(exc)
-        streamer.log(f"[STEP {token}] Root prompt rejected: {exc}")
+        streamer.log(f"[STEP {token}] Repair prompt rejected: {exc}")
         return step, current
+    step.edit_scope = sdg_prompt.edit_scope.record(builder.element_to_id)
     streamer.log(
         f"[STEP {token}] Target: <{target.name}> | Rules: {active_rules} | "
         f"Prompt Size: {len(sdg_prompt.user) + len(sdg_prompt.system)} chars (~{(len(sdg_prompt.user) + len(sdg_prompt.system)) // 4} est tokens)"
@@ -170,10 +174,15 @@ def _step(current, token, table, pending, original_conditions, *, has_accepted_p
         return step, current
 
     streamer.log(f"[STEP {token}] LLM Reply ({len(step.llm.text)} chars):\n{step.llm.text.strip()}")
-    patch = apply_reply(target, step.llm.text, token)                      # mutates builder.soup
+    reply, error = parse_scoped_reply(step.llm.text)
+    if error:
+        patch = PatchResult(False, "empty_reply" if error == "empty_reply" else "invalid_reply", [error])
+    else:
+        step.reply_scope, step.reply_html = reply.scope, reply.html
+        patch = apply_scoped_reply(sdg_prompt.edit_scope, reply, token)    # atomic replacement in builder.soup
     step.status, step.warnings = patch.status, patch.warnings
     if patch.applied:
-        step.candidate_html = clean_reply(step.llm.text)
+        step.candidate_html = reply.html.strip()
 
     streamer.log(
         f"[STEP {token}] Applied: status={step.status} warnings={step.warnings} | "

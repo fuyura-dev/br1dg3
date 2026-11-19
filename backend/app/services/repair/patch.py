@@ -418,9 +418,9 @@ def _preserve_attribute_order(original_tag: Tag, replacement_tag: Tag) -> None:
         replacement_tag.attrs = ordered_attrs
 
 
-def apply_reply(target, reply, token):
+def apply_reply(target, reply, token, *, clean=True):
     """Apply a reply only after tracking checks, leaving the live tree intact on rejection."""
-    text = clean_reply(reply)
+    text = clean_reply(reply) if clean else reply.strip()
     if not text:
         return PatchResult(False, "empty_reply")
     elements = [c for c in BeautifulSoup(text, "html.parser").contents if isinstance(c, Tag)]
@@ -499,6 +499,36 @@ def parse_document_reply(reply):
     if BeautifulSoup(text, "html.parser").find(True) is None:
         return None, "not_html"
     return text, "ok"
+
+
+def apply_block_reply(block, reply, token):
+    """Replace one selected parent subtree after validating every tracked owner.
+
+    The block root itself need not be a scheduled target. Its replacement slot
+    is selected by the backend, never by a model-supplied selector or ID.
+    """
+    parsed = BeautifulSoup(reply, "html.parser")
+    elements = [node for node in parsed.contents if isinstance(node, Tag)]
+    if len(elements) != 1:
+        return PatchResult(False, "patch_rejected", ["block_requires_one_root"])
+    document = block
+    while document.parent is not None:
+        document = document.parent
+    originals = _attribute_index([block], MARKER)
+    if len(originals.get(token, [])) != 1:
+        return PatchResult(False, "tracking_rejected", ["target_marker_mismatch"])
+    expected = {key: owners[0] for key, owners in originals.items()}
+    document_markers = _attribute_index([document], MARKER)
+    errors = [f"marker_duplicate:{key}" for key in expected if len(document_markers[key]) != 1]
+    errors += _marker_errors(_attribute_index(elements, MARKER), expected)
+    if errors:
+        return PatchResult(False, "tracking_rejected", errors)
+    recovered, errors = _restore_tracking(elements, expected, _attribute_index([document], "id"))
+    if errors:
+        return PatchResult(False, "tracking_rejected", errors)
+    _preserve_attribute_order(block, elements[0])
+    block.replace_with(elements[0])
+    return PatchResult(True, "applied", recovered)
 
 
 def strip_markers(html):

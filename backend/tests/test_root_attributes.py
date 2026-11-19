@@ -7,6 +7,7 @@ from app.services.repair.context import ContextExtractor
 from app.services.repair.patch import MARKER, apply_reply, outer_html
 from app.services.repair.prompt import build_sdg_prompt
 from app.services.sdg.builder import SDGBuilder
+from tests.repair_fixtures import sdg_reply, target_from_prompt
 
 with patch("google.genai.Client"):
     from app.services.repair import runner
@@ -206,14 +207,13 @@ class TestRootAttributesInRepairRun(unittest.TestCase):
 
         def generate(prompt):
             prompts.append(prompt.user)
-            markup = prompt.user.split("## Target element [T]\n", 1)[1].split("\n\n##", 1)[0]
-            target = BeautifulSoup(markup, "html.parser").find(True)
+            target = target_from_prompt(prompt)
             if target.name == "body":
                 del target["aria-hidden"]
             else:
                 target.string = "Save"
             return LLMResult(
-                text=str(target), ok=True, status="completed", model="controlled-test",
+                text=sdg_reply(str(target)), ok=True, status="completed", model="controlled-test",
                 prompt_tokens=10, completion_tokens=5, thought_tokens=0,
                 total_tokens=15, latency_s=0.1, attempts=1,
             )

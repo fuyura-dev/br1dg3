@@ -109,6 +109,19 @@ acceptance is not a guarantee of conformance or accessibility success.
 `raw_reply` and accepted `candidate_html`; the older `repaired_html` field
 continues to contain trimmed model reply text, including rejected replies.
 
+SDG model replies now use a JSON `scope`/`html` envelope. Step `edit_scope` records
+the allowed modes, selected current root, input size/limits and selection reason;
+parent-expansion limits are recorded separately from the selected input limits.
+Its `reply_character_limit` and `reply_element_limit` are null: completed replies
+are not rejected solely for output size. Format, scope and tracking checks still apply.
+`reply_scope` and `reply_html` retain the decoded model declaration and HTML even
+when patch validation rejects them. `candidate_html` contains accepted decoded
+HTML. `raw_reply` and legacy `repaired_html` retain the envelope text; clients
+should use decoded HTML for their preview. Invalid envelopes use `invalid_reply`
+and have no decoded fields. Oversized inputs use `prompt_too_large` without a
+model call; rejected outputs retain available model usage. Baseline output
+remains plain full-document HTML. See [editable scope and SDG replies](../services/repair/README.md#editable-scope-and-sdg-replies).
+
 Each step's `rules` retains the original reported rule IDs. `requested_rules`
 lists the rules passed to generation (including a call that raises), and is empty
 when no generation was attempted. `skipped_rules` contains local cascade evidence:

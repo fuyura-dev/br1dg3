@@ -1,11 +1,10 @@
 import unittest
 from unittest.mock import patch
 
-from bs4 import BeautifulSoup
-
 from app.services.repair.context import ContextExtractor
 from app.services.repair.prompt import build_sdg_prompt
 from app.services.sdg.builder import SDGBuilder
+from tests.repair_fixtures import sdg_reply, target_from_prompt
 
 with patch("google.genai.Client"):
     from app.services.repair import runner
@@ -48,8 +47,7 @@ class TestRepairContextRefresh(unittest.TestCase):
             return snapshot["prompt"]
 
         def generate(prompt):
-            markup = prompt.user.split("## Target element [T]\n", 1)[1].split("\n\n##", 1)[0]
-            target = BeautifulSoup(markup, "html.parser").find(True)
+            target = target_from_prompt(prompt)
             calls.append(target["id"])
             if target["id"] == "parent":
                 change_parent(target)
@@ -62,7 +60,7 @@ class TestRepairContextRefresh(unittest.TestCase):
                     target.string = "Save"
                 text = str(target)
             return LLMResult(
-                text=text, ok=True, status="completed", model="controlled-test",
+                text=sdg_reply(text), ok=True, status="completed", model="controlled-test",
                 prompt_tokens=10, completion_tokens=5, thought_tokens=0,
                 total_tokens=15, latency_s=0.1, attempts=1,
             )
@@ -131,7 +129,9 @@ class TestRepairContextRefresh(unittest.TestCase):
         self.assertNotIn("old-label", after["nodes"])
         self.assertIn('aria-labelledby="new-label"', after["prompt"].user)
         self.assertIn("New label", after["prompt"].user)
-        self.assertNotIn("Old label", after["prompt"].user)
+        # The old label remains as an editable-block sibling, while the refreshed
+        # SDG relationship and selected context nodes refer only to the new label.
+        self.assertIn("Old label", after["prompt"].user)
 
     def test_deleted_reference_target_does_not_leave_a_stale_graph_edge(self):
         html = (

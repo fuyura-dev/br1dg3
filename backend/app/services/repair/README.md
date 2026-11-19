@@ -1,5 +1,88 @@
 # LLM Repair
 
+## Editable scope and SDG replies
+
+Before each SDG generation, `scope.py` selects the current target or its
+immediate-parent subtree. Parent expansion stops after one level and excludes
+the document node, `html`, `head`, and `body`. An offered parent block must fit
+both **3,000 characters and 30 elements**, including the root and tracking
+attributes. An oversized parent falls back to the complete target. Ordinary
+targets retain their separate **8,000-character / 80-element** input limits;
+reducing parent expansion does not cause larger eligible targets to be skipped.
+If the target itself is oversized, `prompt_too_large` records a failed step without a model
+call; the document stays in the run and later targets continue. No ordinary
+markup is truncated. HTML/body targets retain the dedicated shortened root path
+below, with target-only replies and its existing 8,000-character view limit.
+
+When a block is available, the prompt shows a target locator and the complete
+block once. Related SDG elements inside the scope are identified as editable;
+those outside it remain read-only. Only the current target's requested rules
+drive the repair, even when surrounding markup can change. Scope selection uses
+the current DOM, not source line ranges or a union of disconnected graph nodes.
+
+SDG output must be exactly one JSON object with two fields:
+
+```json
+{"scope":"target","html":"<input id=\"email\" aria-label=\"Email\">"}
+```
+
+Use `target` when only that replacement slot changes; existing support for new
+wrappers/siblings around the target remains. Use `block` to return the complete
+single-root parent subtree when changing existing surrounding elements. The
+backend chooses the replacement slot: the model supplies no selector and cannot
+expand the scope. A target-only prompt rejects `block` replies. Bare HTML,
+prose, code fences, duplicate/extra JSON fields and unknown scope values are
+rejected as `invalid_reply`; scope is never guessed. The baseline still requests
+and parses plain full-document HTML.
+
+Completed replies are not rejected solely for their character count, element
+count or JSON-envelope length. A larger replacement can still pass the format,
+scope and tracking checks below. Available generation usage and the evaluated
+document's structural changes remain experimental outcomes to analyze; size
+alone is not a patch failure. Removing these acceptance caps does not remove
+provider limits or accept incomplete generations, and adds no generation-token cap.
+
+Input limits are configured as `BLOCK_*` and `TARGET_*` in `scope.py` (shortened
+root views in `root_view.py`). They are not provider-token, full-prompt or
+document-wide budgets: instructions and related context add input, and each
+scheduled generation has its own scope. The 3,000/30 parent setting is the agreed
+starting configuration, not a benchmark-optimized value. Freeze the settings
+before experiments. Absolute bounds do not restrict the percentage of a small
+page that its parent block may contain.
+
+Application is atomic: a rejected reply leaves the current HTML intact. Block
+replacement validates all tracking markers in the chosen subtree, including
+already-processed parents and pending siblings, using the existing unique-ID
+recovery rules. It rejects foreign/lost/duplicate/conflicting tracking, additional
+copies of IDs owned outside the selected scope, multiple block roots, unexpected
+document shells, and prose/comments outside the replacement. Ordinary scopes
+also retain script/style stash-comment counts and reject newly introduced
+standalone `…` placeholders. Root references continue through the root assembler.
+Accepted ordinary replacements apply returned content and attributes directly.
+
+These guards enforce the selected parsed-HTML slot and tracked identity. They
+do not prove that all untracked content, semantics, styling or behavior within
+the editable area was preserved. In particular, blocks can overlap: a later
+target may edit a previously repaired parent or sibling. The initial schedule
+is unchanged, current context is rebuilt, and there is no automatic revisit or
+per-patch Axe scan. Final metrics still determine the measured outcome. The
+larger editable area may improve some repairs or introduce regressions; the
+hybrid response saves repeated block output only when target mode is chosen,
+and does not guarantee lower total token usage.
+
+Step records include `edit_scope` (allowed modes, selected current root, sizes,
+selected input limits, parent-expansion limits and selection reason),
+`reply_scope`, and decoded `reply_html`. The reply-limit fields are null because
+there is no size-only output rejection. The raw
+JSON remains in `llm.text`/API `raw_reply`; `candidate_html` is decoded accepted
+HTML, never the JSON envelope. Malformed envelopes and rejected patches retain
+available usage and continue the schedule. Saved final-scan failure records
+include the same fields. The frontend previews HTML and labels target/block
+repairs and rejected replies separately.
+
+Run `python -m unittest tests.test_repair_scope` for controlled selection,
+envelope, scope-boundary, tracking, asset-restoration and continuation tests.
+
 ## Repair ordering
 
 `run_sdg()` computes one schedule from the prepared original document. Only
@@ -122,7 +205,7 @@ frontend displays the rejected step as failed. Recovery is recorded as
 
 These are conservative tracking checks: they can reject a repair that removes or
 changes a tracked element, even if that repair might otherwise be useful. They do
-not verify accessibility repair or introduce extra Axe scans, model retries or block editing. The
+not verify accessibility repair or introduce extra Axe scans or model retries. The
 zero-shot document parser does not use this SDG marker policy.
 
 Run `python -m unittest tests.test_repair_tracking` from `backend/` for recovery,
@@ -165,8 +248,8 @@ prefix that could be mistaken for replacement text.
 `ROOT_MARKUP_CHAR_LIMIT` and `ROOT_LITERAL_CHAR_LIMIT` in `root_view.py` configure
 the limits. Root **target markup** is capped at 8,000 characters; the renderer
 reduces expansion depth to fit, retaining shown HTML/body attributes. This is
-not a token limit or a cap on the complete prompt, related context, ordinary
-targets, or baseline documents. If the minimum view still exceeds the cap, the
+not a token limit or a cap on the complete prompt, related context, or baseline
+documents. Ordinary scopes have their separate limits above. If the minimum view still exceeds the cap, the
 runner records `prompt_too_large` without a model call, retains current HTML, and
 continues the schedule. The document remains in the run; the step counts as a
 failure. Freeze these settings before experiments; they are engineering defaults,
@@ -199,7 +282,8 @@ Explicit element order in a reply is respected. These checks do not prove that
 arbitrary DOM moves or semantic changes are correct: ambiguous ID-less
 placeholders still use same-tag/document-order matching, other matched-descendant
 attribute omissions still merge, and ordinary matched leaf-text edits are outside
-this root-wrapper fix. General block/subtree editing remains separate work.
+this root-wrapper fix. The ordinary block path above uses complete markup and
+direct replacement rather than this shortened-root reconstructor.
 
 For an HTML target with `document-title`, the root markup shows existing titles
 (using references for long text), and the prompt requests one title inside a head.
@@ -236,8 +320,9 @@ methods, not the isolated effect of semantic context.
 `candidate_html` is the accepted assembled document, or null when no reply/patch
 was accepted. Acceptance uses the existing reply parser and patch acceptance
 rules; it does not establish HTML conformance or successful accessibility repair.
-Raw replies remain in `Step.llm.text`; `Step.candidate_html` holds the accepted,
-cleaned document reply or target patch before assembly.
+Raw replies remain in `Step.llm.text`; SDG replies are JSON envelopes.
+`Step.candidate_html` holds the decoded accepted target/block HTML or cleaned
+baseline document reply before assembly.
 
 Run status is determined from accepted steps, not HTML equality:
 

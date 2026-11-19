@@ -17,6 +17,7 @@ from app.services.repair.root_view import (
     RootViewTooLarge,
 )
 from app.services.sdg.builder import SDGBuilder
+from tests.repair_fixtures import sdg_reply, target_from_prompt
 
 with patch("google.genai.Client"):
     from app.api.repair import _serialize_steps
@@ -504,15 +505,14 @@ class TestRootContentRunner(unittest.TestCase):
 
         def generate(prompt):
             prompts.append(prompt.user)
-            markup = prompt.user.split("## Target element [T]\n", 1)[1].split("\n\n##", 1)[0]
-            target = BeautifulSoup(markup, "html.parser").find(True)
+            target = target_from_prompt(prompt)
             if target.name == "html":
                 text = reply
             else:
                 target["alt"] = "Photo"
                 text = str(target)
             return LLMResult(
-                text=text, ok=True, status="completed", model="controlled-test",
+                text=sdg_reply(text), ok=True, status="completed", model="controlled-test",
                 prompt_tokens=10, completion_tokens=5, thought_tokens=0, total_tokens=15,
                 latency_s=0.1, attempts=1,
             )
@@ -539,7 +539,7 @@ class TestRootContentRunner(unittest.TestCase):
         self.assertEqual(run.failed_steps, 1)
         self.assertEqual(run.total_tokens, 30)
         serialized = _serialize_steps(run)[0]
-        self.assertEqual(serialized["raw_reply"], reply)
+        self.assertEqual(serialized["raw_reply"], sdg_reply(reply))
         self.assertIsNone(serialized["candidate_html"])
         self.assertIn("multiple_reply_titles", serialized["warnings"])
         output = BeautifulSoup(run.fixed_html, "html.parser")
@@ -554,7 +554,7 @@ class TestRootContentRunner(unittest.TestCase):
         self.assertEqual(run.generation_status, "partial")
         self.assertEqual(run.total_tokens, 30)
         first = _serialize_steps(run)[0]
-        self.assertEqual(first["raw_reply"], reply)
+        self.assertEqual(first["raw_reply"], sdg_reply(reply))
         self.assertIsNone(first["candidate_html"])
         self.assertIn("ambiguous_text_rewrite", first["warnings"])
         output = BeautifulSoup(run.fixed_html, "html.parser")
