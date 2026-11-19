@@ -77,6 +77,30 @@ zero-shot document parser does not use this SDG marker policy.
 Run `python -m unittest tests.test_repair_tracking` from `backend/` for recovery,
 ambiguity, root reconstruction rollback, child continuation and failure reporting.
 
+## Attributes in shortened root replies
+
+For an explicitly returned `<html>` or `<body>` tag, the patcher removes original
+attributes that were shown in the shortened prompt but are absent from that tag
+in the reply. Added attributes and changed values are still applied. The prompt
+instructs the model to retain unchanged shown attributes and explicitly return
+the corresponding root tag when changing its attributes.
+
+The prompt and patcher share the same visibility rule: `class`, `style` and
+`data-*` are hidden in shortened markup. Omission preserves these attributes;
+explicit additions/updates still apply, except that internal tracking markers
+are preserved by the patcher. Existing tracking checks reject conflicting IDs
+or markers before publishing the candidate.
+
+Each root is handled independently. A body-only reply keeps the HTML element's
+attributes; an HTML reply without a body keeps the body's attributes. A reply
+containing only a wrapper such as `<main>` does not request root-attribute removal.
+This policy applies to HTML/body roots. Other matched descendants in shortened
+replies still use the existing container reconciler.
+
+Run `python -m unittest tests.test_root_attributes` from `backend/` for attribute
+removal, additions/updates, prompt round trips, tracking rollback, and child-context
+refresh after an accepted body repair. Model replies are controlled fixtures.
+
 ## Candidates and fallback output
 
 `RepairRun.fixed_html` remains the document returned by the repair pipeline.

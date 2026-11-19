@@ -22,6 +22,11 @@ def outer_html(node):
     return node.decode(formatter=_AS_WRITTEN)
 
 
+def is_shown_in_shallow_prompt(attribute: str) -> bool:
+    """Shared visibility policy for shortened root markup and context snippets."""
+    return attribute not in {"class", "style"} and not attribute.startswith("data-")
+
+
 # ------------------------------------------------------------------ reading a reply
 FENCE = re.compile(r"```[a-zA-Z]*\s*\n?(.*?)```", re.DOTALL)
 
@@ -272,22 +277,29 @@ def _reconcile_container(real_container: Tag, reply_container: Tag) -> None:
         real_container.append("\n")
 
 
+def _reconcile_root_attributes(original: Tag, reply: Tag) -> None:
+    """An explicit root reply removes omitted shown attributes, preserving hidden ones."""
+    for name in list(original.attrs):
+        if is_shown_in_shallow_prompt(name) and name not in reply.attrs:
+            del original[name]
+    for name, value in reply.attrs.items():
+        if name != MARKER:
+            original[name] = value
+
+
 def _apply_document_patch(target: Tag, elements: list[Tag]) -> None:
     """Reconcile an <html> or <body> reply with the live BeautifulSoup tree by expanding
     collapsed '…' placeholders back to their original DOM nodes."""
     if target.name == "html":
         reply_html = next((e for e in elements if e.name == "html"), None)
         if reply_html is not None:
-            for k, v in reply_html.attrs.items():
-                target[k] = v
+            _reconcile_root_attributes(target, reply_html)
             reply_head = reply_html.find("head", recursive=False)
             if reply_head is not None and target.head is not None:
                 _reconcile_container(target.head, reply_head)
             reply_body = reply_html.find("body", recursive=False)
             if reply_body is not None and target.body is not None:
-                for k, v in reply_body.attrs.items():
-                    if k != MARKER:
-                        target.body[k] = v
+                _reconcile_root_attributes(target.body, reply_body)
                 _reconcile_container(target.body, reply_body)
             return
 
@@ -301,9 +313,7 @@ def _apply_document_patch(target: Tag, elements: list[Tag]) -> None:
         for el in elements:
             reply_body.append(el)
     else:
-        for k, v in reply_body.attrs.items():
-            if k != MARKER:
-                real_body[k] = v
+        _reconcile_root_attributes(real_body, reply_body)
 
     _reconcile_container(real_body, reply_body)
 

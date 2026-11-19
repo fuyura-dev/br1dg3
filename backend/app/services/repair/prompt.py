@@ -3,10 +3,9 @@ from dataclasses import dataclass
 
 from bs4 import Tag
 
-from app.services.repair.patch import MARKER, outer_html
+from app.services.repair.patch import MARKER, is_shown_in_shallow_prompt, outer_html
 
 VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
-SKIP_ATTRS = {"class", "style"}          # dropped from CONTEXT nodes only (also every data-* attribute)
 
 
 @dataclass
@@ -100,7 +99,7 @@ def _snippet(element, limit=80):
     """Shallow view of a context element: its tag + attributes + short text, children collapsed."""
     attrs = []
     for name, value in element.attrs.items():
-        if name in SKIP_ATTRS or name.startswith("data-"):
+        if not is_shown_in_shallow_prompt(name):
             continue
         if isinstance(value, list):
             value = " ".join(value)
@@ -127,7 +126,7 @@ def _shallow_layout_tree(element, max_depth=2, current_depth=0):
 
     attrs = []
     for k, v in element.attrs.items():
-        if k in SKIP_ATTRS or k.startswith("data-"):
+        if not is_shown_in_shallow_prompt(k):
             continue
         if isinstance(v, list):
             v = " ".join(v)
@@ -249,6 +248,9 @@ def build_sdg_prompt(ctx, element_ids):
     if target_el.name in {"html", "body"}:
         parts.append(
             "Return only the HTML that replaces [T]. "
+            "To change attributes on <html> or <body>, return that tag explicitly. "
+            "Keep every unchanged shown attribute; omitting a shown attribute from that tag removes it. "
+            "Attributes hidden from this view (class, style, data-*) are preserved when omitted. "
             "For layout landmarks (<main>, <header>, <footer>), wrap or convert top-level body sections. "
             "Keep inner section contents collapsed with … to keep the response concise."
         )
