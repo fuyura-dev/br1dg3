@@ -1,5 +1,42 @@
 # LLM Repair
 
+## Repair ordering
+
+`run_sdg()` computes one schedule from the prepared original document. Only
+elements with mapped selected-rule violations are scheduled. Before each step,
+the current HTML is parsed again and its SDG/context is rebuilt; the target
+schedule is not recomputed after patches.
+
+[`dependency_view()`](./order.py) constructs a separate scheduling graph.
+Reference edges are oriented from the referenced provider to its dependent,
+while existing label, heading, landmark, form and structural dependency
+directions are retained. Every direct DOM parent-child relationship is added
+to this view, including ordinary wrappers, so containment paths connect
+ancestors to descendants. These additions do not modify the base SDG, prompt
+context extraction, or semantic-metric definitions. Context-only anchors,
+focus-order edges and same-name sequences are not added as prerequisites.
+
+Mutually reachable nodes are grouped into strongly connected components.
+Dependencies between groups determine their order. If several target groups
+are ready, the group whose earliest affected element comes first in the
+original document is selected. Within a cycle, affected elements follow
+document order because no sequence can satisfy all circular dependencies.
+Paths through unaffected elements still impose dependencies between targets;
+those unaffected elements are not scheduled for repair. The original node
+insertion order supplied by `SDGBuilder` provides the document-order key.
+
+For example, if a container references a description and encloses an image,
+and all three need repair, the schedule is description → container → image.
+The scheduling change can affect later patches, cascade skips and actual call
+counts. It does not establish that a skipped target has been verified as fixed.
+The baseline retains its single full-document generation without this schedule.
+The prompt demonstration uses the same scheduling view as the runner.
+
+Run `python -m unittest tests.test_repair_order` from `backend/` to check
+containment, reference directions, paths through unaffected nodes, cycle
+handling, stable ties, graph isolation and runner integration. Generation is
+mocked; these checks do not measure repair effectiveness on the benchmark.
+
 ## Candidates and fallback output
 
 `RepairRun.fixed_html` remains the document returned by the repair pipeline.

@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from app.services.detection.preprocess import preprocess
 from app.services.repair.context import ContextExtractor
 from app.services.repair.llm import LLMResult, generate
+from app.services.repair.log_streamer import streamer
 from app.services.repair.order import dependency_view, order_violations_by_dependency
 from app.services.repair.patch import (
     MARKER,
@@ -14,7 +15,6 @@ from app.services.repair.patch import (
 )
 from app.services.repair.prompt import build_baseline_prompt, build_sdg_prompt
 from app.services.sdg.builder import SDGBuilder
-from app.services.repair.log_streamer import streamer
 
 
 @dataclass
@@ -243,8 +243,10 @@ def run_sdg(html, violations):
         table[token] = graph.nodes[node]["issues"]
     current = outer_html(builder.soup)
 
-    # 2. dependency order, computed once on the ORIGINAL graph's dependency view, converted to tokens
-    order = [tokens[n] for n in order_violations_by_dependency(dependency_view(graph), units)]
+    # 2. Fixed initial schedule: SDG dependencies plus DOM containment, kept
+    # separate from the graph used for context and semantic measurements.
+    scheduling_graph = dependency_view(graph, builder.element_to_id)
+    order = [tokens[n] for n in order_violations_by_dependency(scheduling_graph, units)]
 
     # 3. one violated element per prompt, each on the CURRENT document
     pending, steps = set(table), []

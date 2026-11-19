@@ -1,8 +1,9 @@
 from collections import defaultdict
 from dataclasses import dataclass
 
-from app.services.repair.patch import MARKER, outer_html
 from bs4 import Tag
+
+from app.services.repair.patch import MARKER, outer_html
 
 VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
 SKIP_ATTRS = {"class", "style"}          # dropped from CONTEXT nodes only (also every data-* attribute)
@@ -261,7 +262,10 @@ if __name__ == "__main__":
     from pathlib import Path
 
     from app.services.repair.context import ContextExtractor
-    from app.services.repair.order import order_violations_by_dependency
+    from app.services.repair.order import (
+        dependency_view,
+        order_violations_by_dependency,
+    )
     from app.services.sdg.builder import SDGBuilder
 
     # Parse arguments
@@ -337,11 +341,12 @@ if __name__ == "__main__":
 
         # 3. Find all violated nodes and sort them by dependency
         violated_nodes = [n for n, d in builder.graph.nodes(data=True) if d.get("has_issue")]
-        ordered_targets = order_violations_by_dependency(builder.graph, violated_nodes)
+        scheduling_graph = dependency_view(builder.graph, builder.element_to_id)
+        ordered_targets = order_violations_by_dependency(scheduling_graph, violated_nodes)
 
         print(f"[*] Total violated nodes found: {len(violated_nodes)}")
         if ordered_targets:
-            print(f"[*] Topological dependency repair order: {' -> '.join(ordered_targets)}")
+            print(f"[*] Dependency repair order (document order within cycles): {' -> '.join(ordered_targets)}")
 
         # 4. Pick target: user-specified, or first in dependency order
         target = args[1] if len(args) > 1 else (ordered_targets[0] if ordered_targets else None)
