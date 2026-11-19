@@ -382,7 +382,7 @@ function buildWorkspaceData(html, graphRes, repairRes = null) {
     const normalizedStatus =
       rawStatus === "applied" || rawStatus === "cascade_resolved"
         ? "applied"
-        : rawStatus.startsWith("llm_") || rawStatus === "empty_reply"
+        : rawStatus.startsWith("llm_") || rawStatus === "empty_reply" || rawStatus === "tracking_rejected"
         ? "failed"
         : "open";
 
@@ -412,15 +412,20 @@ function buildWorkspaceData(html, graphRes, repairRes = null) {
 
     if (step) {
       const isCascade = step.status === "cascade_resolved";
+      const trackingRejected = step.status === "tracking_rejected";
       newRepairs[vId] = {
         strategy: isCascade
           ? `Cascade Resolution (${step.rules.join(", ")})`
           : `SDG-Guided LLM Repair (${step.rules.join(", ")})`,
-        change: isCascade
+        change: trackingRejected
+          ? "Patch rejected; previous HTML retained."
+          : isCascade
           ? "Resolved automatically by an ancestor landmark/container patch without an extra LLM call."
           : step.repaired_html || "Applied structural patch to element.",
         targetElement: `<${node.tag}> (${node.id})`,
-        reason: isCascade
+        reason: trackingRejected
+          ? "The proposed repair could not preserve unambiguous element tracking."
+          : isCascade
           ? "Topological dependency ordering repaired the enclosing ancestor first, satisfying this element's requirement automatically."
           : `Patched using localized SDG subgraph context (${step.related_relationships?.length || 0} dependency edges).`,
         relatedRelationships: step.related_relationships || [],

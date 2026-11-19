@@ -1,4 +1,5 @@
 import re
+from copy import deepcopy
 from dataclasses import dataclass, field
 
 from bs4 import BeautifulSoup, Comment, Tag
@@ -40,7 +41,7 @@ def clean_reply(text):
 @dataclass
 class PatchResult:
     applied: bool
-    status: str                                   # applied | empty_reply | no_element
+    status: str                                   # applied | empty_reply | no_element | tracking_rejected
     warnings: list[str] = field(default_factory=list)
 
 
@@ -53,6 +54,56 @@ def _marker_owner(elements, token):
         if descendant is not None:
             return descendant
     return None
+
+
+def _attribute_index(elements, attribute):
+    """Index every occurrence, including fragment roots (Tag equality is structural)."""
+    owners = {}
+    for root in elements:
+        for element in [root, *root.find_all(True)]:
+            if element.has_attr(attribute):
+                owners.setdefault(element[attribute], []).append(element)
+    return owners
+
+
+def _marker_errors(owners, expected):
+    errors = []
+    for token, elements in owners.items():
+        if token not in expected:
+            errors.append(f"marker_unexpected:{token}")
+        if len(elements) != 1:
+            errors.append(f"marker_duplicate:{token}")
+    return errors
+
+
+def _restore_tracking(elements, expected, original_ids):
+    """Validate an assembled candidate and recover missing markers only by unique ID.
+
+    Mutates the candidate only; callers must not publish it until errors are empty.
+    Existing unique HTML IDs also detect markers moved to a different element.
+    Markers remain the identity anchor for elements without a unique HTML ID.
+    """
+    owners = _attribute_index(elements, MARKER)
+    errors = _marker_errors(owners, expected)
+    if errors:
+        return [], errors
+    candidate_ids = _attribute_index(elements, "id")
+    recovered = []
+    for token, original in expected.items():
+        matches = owners.get(token, [])
+        html_id = original.get("id")
+        unique_id = bool(html_id) and len(original_ids.get(html_id, [])) == 1
+        id_matches = candidate_ids.get(html_id, []) if unique_id else []
+        if matches:
+            if unique_id and (len(id_matches) != 1 or id_matches[0] is not matches[0]):
+                errors.append(f"marker_identity_changed:{token}")
+            continue
+        if len(id_matches) != 1 or id_matches[0].has_attr(MARKER):
+            errors.append(f"marker_lost:{token}")
+            continue
+        id_matches[0][MARKER] = token
+        recovered.append(f"marker_recovered:{token}")
+    return recovered, errors
 
 
 HIDDEN_IN_PROMPT_TAGS = {"script", "style", "link", "meta", "noscript", "svg", "template"}
@@ -272,7 +323,7 @@ def _preserve_attribute_order(original_tag: Tag, replacement_tag: Tag) -> None:
 
 
 def apply_reply(target, reply, token):
-    """Replace `target` with every element in the reply fragment, in document order."""
+    """Apply a reply only after tracking checks, leaving the live tree intact on rejection."""
     text = clean_reply(reply)
     if not text:
         return PatchResult(False, "empty_reply")
@@ -282,19 +333,47 @@ def apply_reply(target, reply, token):
 
     warnings = [f"elements_added:{len(elements)}"] if len(elements) > 1 else []
 
-    replacement_target = _marker_owner(elements, token)
-    if replacement_target is None:
-        same_tag = next((e for e in elements if e.name == target.name), None)
-        replacement_target = same_tag or elements[0]
-        replacement_target[MARKER] = token
-        warnings.append("marker_readded" if same_tag else "marker_ambiguous")
+    document = target
+    while document.parent is not None:
+        document = document.parent
+    original_markers = _attribute_index([target], MARKER)
+    if target.get(MARKER) != token:
+        return PatchResult(False, "tracking_rejected", ["target_marker_mismatch"])
+    expected = {key: owners[0] for key, owners in original_markers.items()}
+    # Check the original document too: an outside duplicate would make the next
+    # runner lookup ambiguous even if the replacement itself had valid markers.
+    document_markers = _attribute_index([document], MARKER)
+    errors = [f"marker_duplicate:{key}" for key in expected if len(document_markers[key]) != 1]
+    errors += _marker_errors(_attribute_index(elements, MARKER), expected)
+    if errors:
+        return PatchResult(False, "tracking_rejected", warnings + errors)
+    original_ids = _attribute_index([document], "id")
 
     if target.name in {"html", "body"}:
-        if replacement_target.name == target.name:
-            _preserve_attribute_order(target, replacement_target)
-            target.attrs.update(replacement_target.attrs)
-        _apply_document_patch(target, elements)
-        return PatchResult(True, "applied", warnings)
+        # The prompt collapses descendants; validate the expanded result, not
+        # marker absence in that shortened reply. Work on a copy for rollback.
+        candidate = deepcopy(target)
+        _apply_document_patch(candidate, elements)
+        recovered, errors = _restore_tracking([candidate], expected, original_ids)
+        if errors:
+            return PatchResult(False, "tracking_rejected", warnings + errors)
+        target.replace_with(candidate)
+        return PatchResult(True, "applied", warnings + recovered)
+
+    replacement_target = _marker_owner(elements, token)
+    # For an ID-less target only, a sole same-tag root identifies its slot.
+    # Descendants never use this fallback: their shape/order may have changed.
+    if (
+        replacement_target is None and not target.get("id") and len(elements) == 1
+        and elements[0].name == target.name and not elements[0].has_attr(MARKER)
+    ):
+        elements[0][MARKER] = token
+        warnings.append("marker_readded")
+    recovered, errors = _restore_tracking(elements, expected, original_ids)
+    if errors:
+        return PatchResult(False, "tracking_rejected", warnings + errors)
+    warnings += recovered
+    replacement_target = _marker_owner(elements, token)
 
     if replacement_target.name != target.name:
         warnings.append("tag_changed")
@@ -303,8 +382,6 @@ def apply_reply(target, reply, token):
 
     if replacement_target.get("id") != target.get("id"):
         warnings.append("id_changed")
-    inner = [e[MARKER] for e in target.find_all(attrs={MARKER: True})]
-    warnings += [f"marker_lost:{t}" for t in inner if _marker_owner(elements, t) is None]
     if len(elements) == 1 and elements[0] == target:  # same name, attributes and children
         warnings.append("unchanged")
 

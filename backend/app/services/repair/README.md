@@ -37,6 +37,46 @@ containment, reference directions, paths through unaffected nodes, cycle
 handling, stable ties, graph isolation and runner integration. Generation is
 mocked; these checks do not measure repair effectiveness on the benchmark.
 
+## Tracking checks before patch application
+
+`apply_reply()` checks the target and all tracked descendants before changing
+the current document. Every expected marker must occur exactly once. Duplicate
+markers, markers imported from outside the target, and unexpected markers reject
+the patch. When a tracked element originally has a unique HTML `id`, the assembled
+candidate must keep that ID on its marker owner, once; missing, duplicated or
+reassigned IDs reject the patch as conflicting identity.
+
+A missing descendant marker can be recovered only through an unchanged, nonempty
+HTML `id` that is unique in the original **whole document** and the candidate.
+The matching candidate element must not already carry another marker. No recovery
+is inferred from descendant position, tag name or similar text. For an ID-less
+target itself, a sole same-tag replacement root may retain the target's marker;
+this exception does not apply to descendants. With no unique ID, preserved markers
+are the identity anchor, not proof that all content or semantics were preserved.
+
+Root `<html>`/`<body>` replies contain collapsed placeholders. The existing
+reconciler expands these on a copy of the target, and tracking is checked on that
+assembled result before insertion. A shortened reply need not repeat markers on
+unchanged content restored from the original tree. Explicit duplicate or foreign
+markers in the reply are still rejected before reconstruction.
+
+Failure returns `tracking_rejected` with warning details, keeps the current HTML,
+and continues the fixed schedule. The rejected step counts as failed, retains its
+raw model reply and available usage, and has no accepted `candidate_html`. A run
+with other accepted steps is partial; an all-rejected run has no candidate. The
+frontend displays the rejected step as failed. Recovery is recorded as
+`marker_recovered:<token>`; rejection reasons include `marker_lost`,
+`marker_duplicate`, `marker_unexpected` and `marker_identity_changed`.
+
+These are conservative tracking checks: they can reject a repair that removes or
+changes a tracked element, even if that repair might otherwise be useful. They do
+not verify accessibility repair, solve all root-container text/attribute/title
+handling, or introduce extra Axe scans, model retries or block editing. The
+zero-shot document parser does not use this SDG marker policy.
+
+Run `python -m unittest tests.test_repair_tracking` from `backend/` for recovery,
+ambiguity, root reconstruction rollback, child continuation and failure reporting.
+
 ## Candidates and fallback output
 
 `RepairRun.fixed_html` remains the document returned by the repair pipeline.

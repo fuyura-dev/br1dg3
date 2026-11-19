@@ -22,7 +22,7 @@ class Step:
     token: str
     tag: str | None
     rules: list[str]
-    status: str        # applied | element_gone | llm_error | llm_not_ok:<status> | empty_reply | no_element
+    status: str        # applied | element_gone | llm_error | llm_not_ok:<status> | empty_reply | no_element | tracking_rejected
     warnings: list[str] = field(default_factory=list)
     node_id: str | None = None          # the node id AT THAT STEP (ids shift as patches are applied)
     original_node_id: str | None = None
