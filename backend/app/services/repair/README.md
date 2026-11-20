@@ -88,10 +88,11 @@ envelope, scope-boundary, tracking, asset-restoration and continuation tests.
 Each step records whether generation was entered. `api_calls` now counts logical
 generations attempted, including failures; a cascade skip or oversized input
 does not count. `requests` counts calls made by the application's retry loop to
-`client.interactions.create()`, including exhausted failures. The pinned SDK can
-also retry internally. These are **application attempts, not an exact count of
-HTTP requests or billable generations**; `request_count_basis` makes this explicit.
-Retry settings and repair behavior are unchanged by the recording fix.
+`client.interactions.create()`, including exhausted failures. Current clients
+disable the SDK's internal retries; older records may have omitted those hidden
+attempts. These remain **application attempts, not proof of billable generations**;
+`request_count_basis` keeps the same meaning for current and historical records.
+The shared retry policy is specified below.
 
 `LLMResult.attempt_records` retains each observed attempt's number, status,
 duration, error and available raw usage. An exhausted/non-retryable exception
@@ -128,6 +129,75 @@ export is separate work and is not implemented by this change.
 
 Run `python -m unittest tests.test_usage_recording tests.test_efficiency` for
 controlled retry, missing-data, raw usage, evaluator and saved-record tests.
+
+## Shared controls and configuration snapshots
+
+`controls.py` defines the same generation and retry settings for both methods:
+minimal thinking, up to four application attempts (initial plus three retries),
+with 1/2/4-second delays for the selected transient statuses and exception types.
+Completed replies are never regenerated because they are malformed, rejected or
+unsuccessful at repairing accessibility. Transport failure retries resend the
+same request. A timeout cannot prove the provider did no work, so request counts
+still do not establish billing or exactly-once remote execution.
+
+SDK-internal retries are disabled through the pinned google-genai 2.24.0
+Interactions resource's `sdk_configuration.retry_config = None`. Its generic
+`HttpRetryOptions(attempts=0)` is normalized and still causes an extra Interactions
+attempt, as reproduced by local transport tests. The SDK-specific control is
+tested with actual SDK calls through `httpx.MockTransport`; rerun these tests on
+an SDK upgrade. Removing the hidden retry layer reduces the previous maximum
+retry effort and may affect completion rates during service outages. SDK-wrapped
+timeout/connection exceptions are recognized by the application loop.
+
+Temperature, top-p, seed and maximum-output tokens remain unspecified. The
+snapshot explicitly records that these use provider defaults whose effective
+values are not asserted. No new output cap, temperature setting or repeat-run
+policy is introduced. Neither the requested model name nor a fixed local hash
+guarantees immutable provider behavior or deterministic output.
+
+Each runner captures `configuration`: UTC capture time, method, hashes of its
+input and prepared input, and a shared `configuration_id`. The ID hashes the
+local controls, requested model, installed package/Python versions, selected
+rules, both system prompts, scope limits, source files, requirements and bundled
+Axe asset. Method, document, timestamp and actual API cache setting are recorded
+outside that shared ID so the two arms can be compared against the same settings.
+The API exposes this snapshot; saved final-scan failures retain it. Cached API
+responses retain their original snapshot/time. The no-issues API shortcut makes
+no repair run and returns no configuration snapshot; direct empty runners do.
+Manual/historical `RepairRun` objects can have null configuration.
+
+Each generated step's `llm.request` separately records the exact application
+payload (model, system/user prompt, explicit generation settings and `store`),
+timestamp and request hash, including on terminal request failure. It is not a
+wire-level packet capture. `response_model` records only a model string actually
+returned by the provider; it can be null or an alias. API credentials, transport
+headers and `.env` contents are not included. Exact prompts include document
+content, so responses/failure records are larger than before.
+
+From `backend/`, capture and check the current local setup without model/browser calls:
+
+```bash
+python -m scripts.snapshot_config --output /tmp/br1dg3-config.json
+python -m scripts.snapshot_config --check /tmp/br1dg3-config.json
+```
+
+Capture creates a new file and refuses to overwrite it. Check exits unsuccessfully
+if the file was modified without updating its ID or if local configuration/code
+differs. This detects accidental drift, not deliberate tampering. For final
+experiments, retain the snapshot with the dataset/run artifacts, use cache bypass,
+and compare each run's ID. The check is explicit, not an automatic batch/API gate;
+the experiment runner/export remains separate work. Source fingerprints describe
+files at capture time: restart the backend after edits before capturing/running.
+Hashes detect drift but do not archive source; retain the matching source version.
+
+The final protocol freeze still follows the remaining measurement, dataset and
+analysis decisions. Browser details are supplied by actual scan reports, and
+dataset membership, analysis choices and external Excel prices are not covered
+by this local configuration ID. This tooling does not itself freeze the entire
+experiment or complete its export pipeline.
+
+Run `python -m unittest tests.test_generation_controls` for snapshot identity,
+drift detection, exact request retention and real-SDK mocked-transport checks.
 
 ## Repair ordering
 
@@ -417,17 +487,18 @@ the complete JSON file has been written. The record contains:
   not rewritten. Direct callers that have only violation lists leave reports null.
 - The scan error's type and message.
 - `repair_run`: output and candidate HTML, generation/fallback status,
-  unmapped-target count, and complete step records.
+  unmapped-target count, configuration snapshot, and complete step records.
   Each available `llm` record preserves reply text, model, status, token fields,
-  raw usage, per-attempt records and generation timing. Request failures retain
+  raw usage, per-attempt records, generation timing and exact request evidence.
+  Request failures retain
   their collected attempt evidence; a failure without a recorded result remains null.
 
 These are saved run artifacts, not validated repairs. Use `candidate_html`,
 `generation_status`, and `fallback_used` to distinguish a candidate from fallback
 HTML. Older records without these fields do not establish candidate availability.
 Usage is preserved without recalculation under the coverage rules above.
-SDK-internal request visibility and billing-field interpretation remain separate
-limitations. This recorder does not calculate a monetary cost or claim to retain
+Current clients disable SDK-internal retries; historical records may omit them.
+Application attempts and usage do not establish billing. This recorder does not calculate a monetary cost or claim to retain
 the full provider response.
 
 Saving performs no repair generation, detection retry, or metric computation.

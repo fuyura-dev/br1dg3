@@ -37,6 +37,7 @@ class RepairResponse(BaseModel):
         default=None, description="Accepted assembled candidate before script/style restoration; null if none.",
     )
     generation: dict[str, Any] | None = None
+    configuration: dict[str, Any] | None = None
     issues_before: int
     issues_after: int
     issues_fixed: int           # issues_before - issues_after (can be negative if repair regresses)
@@ -142,6 +143,8 @@ def repair_html(request: RepairRequest):
 
     run = run_sdg(clean_html, violations_before) if request.use_sdg \
         else run_baseline(clean_html, violations_before)
+    if run.configuration is not None:
+        run.configuration["api_cache_enabled"] = request.use_cache
 
     streamer.log("[POST-REPAIR] Repair steps completed. Starting post-repair verification...")
     streamer.log("[POST-REPAIR] Running post-repair Axe accessibility scan on fixed HTML...")
@@ -194,6 +197,7 @@ def repair_html(request: RepairRequest):
         fixed_html=repaired_html,
         candidate_html=run.candidate_html,
         generation=run.generation_summary(),
+        configuration=run.configuration,
         issues_before=issues_before,
         issues_after=issues_after,
         issues_fixed=issues_before - issues_after,

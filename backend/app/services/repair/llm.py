@@ -5,22 +5,21 @@ from dataclasses import dataclass, field
 from google import genai
 
 from app.config import settings
+from app.services.repair import controls
+from app.services.repair.configuration import request_record
 from app.services.repair.usage import usage_counts
 
-client = genai.Client(api_key=settings.LLM_API_KEY)
 
-GENERATION_CONFIG: dict = {
-    "thinking_level": "minimal",             # minimal | low | medium | high
-    # "seed": 42,
-    # "max_output_tokens": 8192,
-}
+def create_client(api_key, **kwargs):
+    instance = genai.Client(api_key=api_key, **kwargs)
+    # google-genai 2.24.0 normalizes HttpRetryOptions(attempts=0) to 1,
+    # which Interactions interprets as an extra retry. Disable its actual
+    # retry configuration instead; MockTransport tests verify one SDK attempt.
+    instance.interactions.sdk_configuration.retry_config = None
+    return instance
 
-# Transient failures (rate limit, overloaded, network) are retried. This is NOT a repair retry:
-# a bad reply is never re-requested (the paper records the output without retries).
-MAX_RETRIES = 3
-RETRY_STATUS = {429, 500, 502, 503, 504}
-RETRY_ERRORS = {"ReadTimeout", "ConnectTimeout", "ConnectError", "TimeoutException",
-                "RemoteProtocolError", "NoResponseError"}
+
+client = create_client(settings.LLM_API_KEY)
 
 
 @dataclass
@@ -43,10 +42,12 @@ class LLMResult:
     thought_tokens: int | None      # provider's total_thought_tokens
     total_tokens: int | None        # provider total only; never reconstructed from components
     latency_s: float                # last application attempt, including failure
-    attempts: int                   # create() invocations; excludes unobserved SDK-internal retries
+    attempts: int                   # create() invocations; SDK-internal retries now disabled
     raw_usage: dict | None = None   # unmodified usage fields from the final response/error
     attempt_records: list[RequestAttempt] = field(default_factory=list)
     elapsed_s: float | None = None  # whole generation including application retry delays
+    request: dict | None = None     # exact model/settings/prompts, timestamp and request hash
+    response_model: str | None = None  # only when actually supplied by the provider
 
 
 class LLMRequestError(RuntimeError):
@@ -81,7 +82,7 @@ def _text(interaction):
 
 def _is_transient(exc):
     code = getattr(exc, "status_code", None) or getattr(exc, "code", None)
-    return code in RETRY_STATUS or type(exc).__name__ in RETRY_ERRORS
+    return code in controls.RETRY_STATUS or type(exc).__name__ in controls.RETRY_ERRORS
 
 
 def _raw_usage(usage):
@@ -100,10 +101,12 @@ def generate(prompt) -> LLMResult:
         "input": prompt.user,
         "store": False,                       # stateless: nothing is kept server-side between calls
     }
-    if GENERATION_CONFIG:
-        request["generation_config"] = GENERATION_CONFIG
+    if controls.GENERATION_CONFIG:
+        request["generation_config"] = deepcopy(controls.GENERATION_CONFIG)
 
     records = []
+    recorded_request = request_record(request)
+    response_model = None
     generation_started = time.perf_counter()
 
     def result(text, status):
@@ -114,6 +117,7 @@ def generate(prompt) -> LLMResult:
             latency_s=records[-1].latency_s, attempts=len(records),
             raw_usage=raw_usage, attempt_records=records,
             elapsed_s=round(time.perf_counter() - generation_started, 3),
+            request=recorded_request, response_model=response_model,
         )
 
     while True:
@@ -130,12 +134,14 @@ def generate(prompt) -> LLMResult:
                 latency_s=round(time.perf_counter() - started, 3), raw_usage=_raw_usage(usage),
                 error=f"{type(exc).__name__}: {exc}",
             ))
-            if len(records) > MAX_RETRIES or not _is_transient(exc):
+            if len(records) > controls.MAX_RETRIES or not _is_transient(exc):
                 raise LLMRequestError(exc, result("", "request_error")) from exc
-            time.sleep(2 ** (len(records) - 1))   # 1s, 2s, 4s
+            time.sleep(controls.retry_delay(len(records) - 1))
     latency = time.perf_counter() - started
 
     usage = _get(interaction, "usage")
+    model = _get(interaction, "model")
+    response_model = model if isinstance(model, str) else None
     text = _text(interaction)
     status = _get(interaction, "status")
     status = str(getattr(status, "value", status)).lower() if status is not None else None

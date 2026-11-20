@@ -128,8 +128,20 @@ elapsed time. Terminal request failures keep these records. In
 `metrics.efficiency`, `api_calls` counts attempted logical generations;
 `requests` counts application calls to the SDK, including application retries.
 `request_count_basis: application_attempts` explicitly excludes unobserved
-SDK-internal retries. If the count is unknown, `requests` is null and
+SDK-internal retries in historical records; current clients disable those retries.
+If the count is unknown, `requests` is null and
 `known_requests` retains the observed subtotal.
+
+Top-level `configuration` retains the runner's shared configuration ID, controls,
+versions/source fingerprints, method, input hashes and capture time.
+`api_cache_enabled` records the original request's cache setting. Cache hits keep
+the original snapshot; use `use_cache: false` for experiments. Legacy/manual runs
+and the no-issues API shortcut can have null configuration. Each step's
+`llm.request` retains its exact application payload, UTC time and hash, including
+on terminal request failure. `response_model` is the model string from the provider
+when available. These records omit API credentials but include prompt HTML.
+See [shared controls and configuration snapshots](../services/repair/README.md#shared-controls-and-configuration-snapshots)
+for the capture/check command and the limits of this local configuration ID.
 
 Token totals are null when any observed application attempt lacks that field.
 `reported_usage` retains known subtotals and `usage_complete` identifies field

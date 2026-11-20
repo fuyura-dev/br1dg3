@@ -6,6 +6,7 @@ from app.services.repair.cascade import (
     infer_skips,
     supported_condition,
 )
+from app.services.repair.configuration import run_configuration
 from app.services.repair.context import ContextExtractor
 from app.services.repair.llm import LLMRequestError, LLMResult, generate
 from app.services.repair.log_streamer import streamer
@@ -50,6 +51,7 @@ class RepairRun:
     fixed_html: str
     steps: list[Step]
     unmapped: int                       # Axe nodes that could not be mapped to an element (never attempted)
+    configuration: dict | None = None   # captured controls/code identity; null for legacy/manual runs
     candidate_html: str | None = field(init=False)
     generation_status: str = field(init=False)
     fallback_used: bool = field(init=False)
@@ -200,13 +202,15 @@ def _step(current, token, table, pending, original_conditions, *, has_accepted_p
 
 def run_sdg(html, violations):
     """html: the document. violations: raw Axe violations (from detect())."""
-    html = preprocess(html)
+    prepared = preprocess(html)
+    configuration = run_configuration("sdg", html, prepared)
+    html = prepared
     builder = SDGBuilder(html, violations)          # the ONLY place Axe selectors are used
     graph = builder.graph
     units = [n for n, d in graph.nodes(data=True) if d["has_issue"]]       # one unit per element
     unmapped = sum(len(v.get("nodes", [])) for v in violations) - sum(len(graph.nodes[n]["issues"]) for n in units)
     if not units:
-        return RepairRun(html, [], unmapped)
+        return RepairRun(html, [], unmapped, configuration=configuration)
 
     # 1. one token per violated element, stamped into the HTML; Axe details kept by token
     tokens = {node: f"v{i}" for i, node in enumerate(units, 1)}
@@ -239,14 +243,16 @@ def run_sdg(html, violations):
         pending.discard(token)
         steps.append(step)
 
-    return RepairRun(strip_markers(current), steps, unmapped)
+    return RepairRun(strip_markers(current), steps, unmapped, configuration=configuration)
 
 
 def run_baseline(html, violations):
     """Zero-shot baseline: one call, the whole document, all violations at once."""
-    html = preprocess(html)
+    prepared = preprocess(html)
+    configuration = run_configuration("zero_shot", html, prepared)
+    html = prepared
     if not violations:
-        return RepairRun(html, [], 0)
+        return RepairRun(html, [], 0, configuration=configuration)
 
     step = Step("baseline", None, [v.get("id") for v in violations], "", generation_attempted=False)
     try:
@@ -258,12 +264,12 @@ def run_baseline(html, violations):
         if isinstance(exc, LLMRequestError):
             step.llm = exc.result
         step.status, step.error = "llm_error", f"{type(exc).__name__}: {exc}"
-        return RepairRun(html, [step], 0)
+        return RepairRun(html, [step], 0, configuration=configuration)
     if not step.llm.ok:                                                   # truncated / failed / empty
         step.status = f"llm_not_ok:{step.llm.status}"
-        return RepairRun(html, [step], 0)
+        return RepairRun(html, [step], 0, configuration=configuration)
 
     fixed_html, status = parse_document_reply(step.llm.text)
     step.status = "applied" if status == "ok" else status
     step.candidate_html = fixed_html
-    return RepairRun(fixed_html if status == "ok" else html, [step], 0)
+    return RepairRun(fixed_html if status == "ok" else html, [step], 0, configuration=configuration)

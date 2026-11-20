@@ -31,8 +31,9 @@ def generation_attempted(step):
 def summarize_usage(steps):
     """Complete totals are null if any observed application attempt lacks usage.
 
-    Reported subtotals remain available separately. SDK-internal retries are not
-    observable here; neither these counts nor provider usage prove billed cost.
+    Reported subtotals remain available separately. Current clients disable
+    SDK-internal retries; historical records may exclude them. Neither these
+    counts nor provider usage prove billed cost.
     Legacy result objects lack attempt records, so earlier retries are unknown.
     """
     reported = dict.fromkeys(TOKEN_FIELDS, 0)
