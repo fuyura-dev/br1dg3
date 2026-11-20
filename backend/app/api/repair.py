@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from hashlib import sha256
 from time import monotonic
 from typing import Any
@@ -55,11 +56,15 @@ def _count_issues(violations: list[dict]) -> int:
 
 
 def _summarize(request: "RepairRequest", run, issues_before: int, issues_after: int) -> str:
+    def available(value):
+        return value if value is not None else "unavailable"
     tokens_detail = (
-        f"{run.total_tokens} tokens "
-        f"[{run.prompt_tokens} input, {run.completion_tokens} output, {run.thought_tokens} thought]"
+        f"{available(run.total_tokens)} tokens "
+        f"[{available(run.prompt_tokens)} input, {available(run.completion_tokens)} output, "
+        f"{available(run.thought_tokens)} thought]"
     )
-    tail = f"{issues_before} -> {issues_after} issues ({run.api_calls} API calls, {tokens_detail})"
+    tail = (f"{issues_before} -> {issues_after} issues ({run.api_calls} generations, "
+            f"{available(run.requests)} application attempts, {tokens_detail})")
     if run.fallback_used:
         return f"No accepted repair candidate; fallback HTML returned. {run.failed_steps} failed steps, {run.unmapped} unmapped, {tail}."
     if request.use_sdg:
@@ -90,6 +95,8 @@ def _serialize_steps(run) -> list[dict[str, Any]]:
             "related_relationships": s.related_relationships,
             "warnings": s.warnings,
             "error": s.error,
+            "generation_attempted": s.generation_attempted,
+            "llm": asdict(s.llm) if s.llm is not None else None,
         }
         for s in run.steps
     ]

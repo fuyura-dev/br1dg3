@@ -159,7 +159,7 @@ class TestSafetyIntegration(unittest.TestCase):
         self.assertEqual(report.semantic.preservation_rate, 100)
         self.assertEqual(report.effectiveness.violations_after, 0)
         self.assertFalse(report.effectiveness.scan_failed)
-        self.assertEqual(report.efficiency.api_calls, 0)
+        self.assertIsNone(report.efficiency.api_calls)
 
     def test_evaluator_passes_original_document_context(self):
         report = evaluate_repair(

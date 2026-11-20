@@ -246,7 +246,7 @@ class TestRepairCandidates(unittest.TestCase):
             response = evaluate_api.evaluate_document_repair(evaluate_api.EvaluateRequest(
                 html_original=self.html, html_repaired=self.html,
                 violations_before=self.violations, fallback_used=True,
-                efficiency_data={"api_calls": 1, "prompt_tokens": 10, "completion_tokens": 5},
+                efficiency_data={"api_calls": 1, "prompt_tokens": 10, "completion_tokens": 5, "thought_tokens": 0},
             ))
         detect.assert_not_called()
         self.assertEqual(response.evaluation["score_basis"], "no_candidate_failure_policy")

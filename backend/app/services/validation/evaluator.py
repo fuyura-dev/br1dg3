@@ -2,6 +2,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 from app.services.detection.detect import DetectionError, scan_with_report
+from app.services.repair.log_streamer import streamer
 from app.services.validation.effectiveness import (
     EffectivenessResult,
     calculate_effectiveness,
@@ -22,7 +23,6 @@ from app.services.validation.structure import (
     count_nodes,
     html_to_tree,
 )
-from app.services.repair.log_streamer import streamer
 
 
 class MissingInitialScanError(ValueError):
@@ -155,19 +155,26 @@ def evaluate_repair(
         efficiency = calculate_efficiency_from_run(repair_run)
     elif efficiency_data is not None:
         efficiency = calculate_efficiency(
-            api_calls=efficiency_data.get("api_calls", 0),
-            prompt_tokens=efficiency_data.get("prompt_tokens", 0),
-            completion_tokens=efficiency_data.get("completion_tokens", 0),
-            thought_tokens=efficiency_data.get("thought_tokens", 0),
+            api_calls=efficiency_data.get("api_calls"),
+            prompt_tokens=efficiency_data.get("prompt_tokens"),
+            completion_tokens=efficiency_data.get("completion_tokens"),
+            thought_tokens=efficiency_data.get("thought_tokens"),
             cascaded_count=efficiency_data.get("cascaded_count", 0),
             patched_count=efficiency_data.get("patched_count", 0),
             total_elements=efficiency_data.get("total_elements", 0),
+            **{key: efficiency_data[key] for key in (
+                "total_tokens", "requests", "known_requests", "request_count_complete",
+                "reported_usage", "usage_complete", "total_tokens_source",
+            ) if key in efficiency_data},
         )
     else:
-        efficiency = calculate_efficiency(0, 0, 0, 0)
+        efficiency = calculate_efficiency(None, None, None, None, total_tokens=None)
+    cost_label = f"${efficiency.cost_usd:.4f}" if efficiency.cost_usd is not None else "unavailable"
+    tokens_label = efficiency.total_tokens if efficiency.total_tokens is not None else "unavailable"
+    calls_label = efficiency.api_calls if efficiency.api_calls is not None else "unavailable"
     streamer.log(
-        f"[METRICS] 4/5 Efficiency: {efficiency.total_tokens} tokens across {efficiency.api_calls} API calls "
-        f"(${efficiency.cost_usd:.4f})"
+        f"[METRICS] 4/5 Efficiency: {tokens_label} tokens across {calls_label} generations "
+        f"(legacy cost estimate: {cost_label})"
     )
 
     # 5. Metric 5: Semantic Dependency Preservation

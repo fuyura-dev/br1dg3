@@ -83,6 +83,52 @@ repairs and rejected replies separately.
 Run `python -m unittest tests.test_repair_scope` for controlled selection,
 envelope, scope-boundary, tracking, asset-restoration and continuation tests.
 
+## Generation attempts and reported usage
+
+Each step records whether generation was entered. `api_calls` now counts logical
+generations attempted, including failures; a cascade skip or oversized input
+does not count. `requests` counts calls made by the application's retry loop to
+`client.interactions.create()`, including exhausted failures. The pinned SDK can
+also retry internally. These are **application attempts, not an exact count of
+HTTP requests or billable generations**; `request_count_basis` makes this explicit.
+Retry settings and repair behavior are unchanged by the recording fix.
+
+`LLMResult.attempt_records` retains each observed attempt's number, status,
+duration, error and available raw usage. An exhausted/non-retryable exception
+still produces the existing `llm_error` step, now with its recorded result.
+`latency_s` measures the last application attempt; `elapsed_s` measures the whole
+generation including application backoff delays, not the document's scan and
+repair duration. The API returns these records under each step's `llm`, and
+final-scan failure artifacts retain them too.
+
+Provider token fields remain separate: input, output, thought and provider total.
+`raw_usage` preserves supplied fields, including cached/tool token breakdowns when
+present. Missing or malformed counts become null; a reported zero remains zero.
+The provider total is never replaced with a component sum. No billing overlap
+or inclusion rule is inferred from these names.
+
+At document level, a token field is null if any observed application attempt
+lacks that field. `reported_usage` retains the sum of known values separately,
+and `usage_complete` gives coverage for each field. For example, a failed attempt
+without usage followed by a reply reporting 100 tokens yields `total_tokens:
+null`, `reported_usage.total_tokens: 100`, and incomplete total-token coverage.
+Coverage describes the observed application attempts, not hidden SDK retries or
+proof of complete billing. `known_requests` retains a request subtotal when an
+unexpected exception leaves the attempt count unknown; `requests` is then null
+and `request_count_complete` false. No generation means known zero usage.
+Legacy records with only final-response usage and multiple attempts retain that
+reported usage, but do not establish coverage of the earlier attempts.
+
+The frontend displays unavailable totals as N/A and partial subtotals as partial.
+The existing display price constants/formula are unchanged; its cost estimate is
+null if a required usage component is unknown. Experimental monetary cost will
+be calculated externally in Excel using the researcher's documented prices.
+The future document-level export must exclude computed monetary cost; that
+export is separate work and is not implemented by this change.
+
+Run `python -m unittest tests.test_usage_recording tests.test_efficiency` for
+controlled retry, missing-data, raw usage, evaluator and saved-record tests.
+
 ## Repair ordering
 
 `run_sdg()` computes one schedule from the prepared original document. Only
@@ -373,15 +419,16 @@ the complete JSON file has been written. The record contains:
 - `repair_run`: output and candidate HTML, generation/fallback status,
   unmapped-target count, and complete step records.
   Each available `llm` record preserves reply text, model, status, token fields,
-  attempts, and latency as currently recorded. A missing LLM result remains null.
+  raw usage, per-attempt records and generation timing. Request failures retain
+  their collected attempt evidence; a failure without a recorded result remains null.
 
 These are saved run artifacts, not validated repairs. Use `candidate_html`,
 `generation_status`, and `fallback_used` to distinguish a candidate from fallback
 HTML. Older records without these fields do not establish candidate availability.
-Usage is preserved without recalculation, and existing usage-field limitations
-still apply. Request/token/cost accounting corrections remain pending;
-this recorder does not calculate a monetary cost or claim to retain the full
-provider response.
+Usage is preserved without recalculation under the coverage rules above.
+SDK-internal request visibility and billing-field interpretation remain separate
+limitations. This recorder does not calculate a monetary cost or claim to retain
+the full provider response.
 
 Saving performs no repair generation, detection retry, or metric computation.
 The API continues returning its existing HTTP 503 error and does not cache the

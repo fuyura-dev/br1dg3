@@ -88,7 +88,7 @@ of the returned fallback:
 | Safety | Score 0, `is_valid: false`, reason `no_candidate`. This does not claim that the fallback contains syntax errors. |
 | Structure | Similarity 0 and preserved false. TED, candidate node count, and max node count are null because there is no candidate tree. Original node count is retained. `unparseable` remains false: no candidate was parsed. |
 | Semantic | Preserved count and SDP 0 when original dependencies exist. With none, `has_dependencies: false` and rate null (N/A). Broken count is null and broken examples empty; no breakage in the fallback was measured. |
-| Efficiency | Available recorded usage/cost is retained without changing the existing accounting. |
+| Efficiency | Attempted generations, application attempts and known usage subtotals are retained. Incomplete totals are null, not zero; legacy cost is unavailable when required usage is missing. |
 
 Generation failure does not set `scan_failed` by itself. Standalone evaluation
 with `fallback_used: true` skips a final scan of the fallback, but still requires

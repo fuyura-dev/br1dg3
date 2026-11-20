@@ -1,8 +1,11 @@
 import time
-from dataclasses import dataclass
+from copy import deepcopy
+from dataclasses import dataclass, field
+
+from google import genai
 
 from app.config import settings
-from google import genai
+from app.services.repair.usage import usage_counts
 
 client = genai.Client(api_key=settings.LLM_API_KEY)
 
@@ -21,17 +24,37 @@ RETRY_ERRORS = {"ReadTimeout", "ConnectTimeout", "ConnectError", "TimeoutExcepti
 
 
 @dataclass
+class RequestAttempt:
+    number: int
+    status: str
+    latency_s: float
+    raw_usage: dict | None = None
+    error: str | None = None
+
+
+@dataclass
 class LLMResult:
     text: str
     ok: bool                 # completed AND non-empty text (a truncated reply is NOT ok)
     status: str | None       # the interaction status, e.g. "completed", "incomplete"
     model: str
-    prompt_tokens: int       # usage.total_input_tokens (system prompt included)
-    completion_tokens: int   # usage.total_output_tokens
-    thought_tokens: int      # usage.total_thought_tokens, billed like output: cost = completion + thought
-    total_tokens: int
-    latency_s: float         # of the successful request only
-    attempts: int            # HTTP requests made for this call (1 unless a transient error was retried)
+    prompt_tokens: int | None       # provider's total_input_tokens
+    completion_tokens: int | None   # provider's total_output_tokens; no billing interpretation
+    thought_tokens: int | None      # provider's total_thought_tokens
+    total_tokens: int | None        # provider total only; never reconstructed from components
+    latency_s: float                # last application attempt, including failure
+    attempts: int                   # create() invocations; excludes unobserved SDK-internal retries
+    raw_usage: dict | None = None   # unmodified usage fields from the final response/error
+    attempt_records: list[RequestAttempt] = field(default_factory=list)
+    elapsed_s: float | None = None  # whole generation including application retry delays
+
+
+class LLMRequestError(RuntimeError):
+    """A terminal request failure carrying the usage evidence collected so far."""
+
+    def __init__(self, cause, result):
+        super().__init__(f"{type(cause).__name__}: {cause}")
+        self.result = result
 
 
 def _get(obj, name, default=None):
@@ -61,6 +84,14 @@ def _is_transient(exc):
     return code in RETRY_STATUS or type(exc).__name__ in RETRY_ERRORS
 
 
+def _raw_usage(usage):
+    if isinstance(usage, dict):
+        return deepcopy(usage)
+    if hasattr(usage, "model_dump"):
+        return usage.model_dump(mode="json", exclude_unset=True)
+    return None
+
+
 def generate(prompt) -> LLMResult:
     """prompt: anything with .system and .user (the Prompt from prompt.py)."""
     request = {
@@ -72,48 +103,55 @@ def generate(prompt) -> LLMResult:
     if GENERATION_CONFIG:
         request["generation_config"] = GENERATION_CONFIG
 
-    attempts = 0
+    records = []
+    generation_started = time.perf_counter()
+
+    def result(text, status):
+        raw_usage = records[-1].raw_usage
+        return LLMResult(
+            text=text, ok=status == "completed" and bool(text.strip()), status=status,
+            model=settings.LLM_MODEL, **usage_counts(raw_usage),
+            latency_s=records[-1].latency_s, attempts=len(records),
+            raw_usage=raw_usage, attempt_records=records,
+            elapsed_s=round(time.perf_counter() - generation_started, 3),
+        )
+
     while True:
-        attempts += 1
         started = time.perf_counter()
         try:
             interaction = client.interactions.create(**request)
             break
         except Exception as exc:
-            if attempts > MAX_RETRIES or not _is_transient(exc):
-                raise
-            time.sleep(2 ** (attempts - 1))   # 1s, 2s, 4s
+            usage = _get(exc, "usage")
+            if usage is None:
+                usage = _get(_get(exc, "body"), "usage")
+            records.append(RequestAttempt(
+                number=len(records) + 1, status="request_error",
+                latency_s=round(time.perf_counter() - started, 3), raw_usage=_raw_usage(usage),
+                error=f"{type(exc).__name__}: {exc}",
+            ))
+            if len(records) > MAX_RETRIES or not _is_transient(exc):
+                raise LLMRequestError(exc, result("", "request_error")) from exc
+            time.sleep(2 ** (len(records) - 1))   # 1s, 2s, 4s
     latency = time.perf_counter() - started
 
     usage = _get(interaction, "usage")
     text = _text(interaction)
     status = _get(interaction, "status")
     status = str(getattr(status, "value", status)).lower() if status is not None else None
-    prompt_tokens = _get(usage, "total_input_tokens", 0) or 0
-    completion_tokens = _get(usage, "total_output_tokens", 0) or 0
-    thought_tokens = _get(usage, "total_thought_tokens", 0) or 0
-    total_tokens = _get(usage, "total_tokens", 0) or (prompt_tokens + completion_tokens + thought_tokens)
+    records.append(RequestAttempt(
+        number=len(records) + 1, status=status or "unknown",
+        latency_s=round(latency, 3), raw_usage=_raw_usage(usage),
+    ))
+    completed = result(text, status)
 
     from app.services.repair.log_streamer import streamer
     streamer.log(
         f"[LLM] Status: {status} | Latency: {round(latency, 2)}s | "
-        f"Input: {prompt_tokens} | Output: {completion_tokens} | Thought: {thought_tokens} | Total: {total_tokens} tokens"
+        f"Input: {completed.prompt_tokens} | Output: {completed.completion_tokens} | "
+        f"Thought: {completed.thought_tokens} | Total: {completed.total_tokens} tokens (None = unreported)"
     )
-    if not thought_tokens and not prompt_tokens:
-        streamer.log(f"[LLM] Raw usage object from API: {usage}")
-
-    return LLMResult(
-        text=text,
-        ok=status == "completed" and bool(text.strip()),
-        status=status,
-        model=settings.LLM_MODEL,
-        prompt_tokens=prompt_tokens,
-        completion_tokens=completion_tokens,
-        thought_tokens=thought_tokens,
-        total_tokens=total_tokens,
-        latency_s=round(latency, 3),
-        attempts=attempts,
-    )
+    return completed
 
 
 if __name__ == "__main__":

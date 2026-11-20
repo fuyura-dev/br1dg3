@@ -231,15 +231,25 @@ function mapMetricsToCards(metricsDict, issuesBefore, issuesAfter) {
     : { label: "Altered (<0.85)", tone: "warning" };
 
   // 4. Repair Efficiency (Resource metrics: TAC, TT, TC, Cascaded)
-  const apiCalls = efc.api_calls ?? 0;
-  const totalTokens = efc.total_tokens ?? 0;
-  const costUsd = efc.cost_usd ?? 0;
+  const apiCalls = efc.api_calls;
+  const generationLabel = apiCalls == null ? "N/A" : `${apiCalls}`;
+  const totalTokens = efc.total_tokens;
+  const costUsd = efc.cost_usd;
+  const tokenLabel = totalTokens == null ? "N/A" : totalTokens.toLocaleString();
+  const costLabel = costUsd == null ? "N/A" : `$${costUsd.toFixed(5)}`;
+  const partialUsage = totalTokens == null || Object.values(efc.usage_complete || {}).some((known) => !known);
+  const attemptLabel = efc.requests == null ? "unavailable" : `${efc.requests}`;
+  const reportedDetail = totalTokens == null && efc.reported_usage?.total_tokens != null
+    ? ` ${efc.reported_usage.total_tokens.toLocaleString()} provider-reported tokens retained; this is an incomplete subtotal.`
+    : "";
   const cascadedCount = efc.cascaded_count ?? 0;
   const totalElements = efc.total_elements ?? 0;
   const cascadeRate = efc.cascade_rate ?? 0;
 
   const efficiencyStatus =
-    cascadedCount > 0
+    partialUsage
+      ? { label: "Usage Incomplete", tone: "warning" }
+      : cascadedCount > 0
       ? { label: `${cascadedCount} Locally Skipped`, tone: "accent" }
       : { label: "Completed", tone: "accent" };
 
@@ -293,16 +303,14 @@ function mapMetricsToCards(metricsDict, issuesBefore, issuesAfter) {
       id: "efficiency",
       label: "Repair Efficiency",
       showBar: false,
-      displayValue: `${apiCalls} API Call${apiCalls === 1 ? "" : "s"}`,
+      displayValue: `${generationLabel} Generation${apiCalls === 1 ? "" : "s"}`,
       status: efficiencyStatus,
       stats: [
-        { value: `${apiCalls}`, label: "calls" },
-        { value: totalTokens.toLocaleString(), label: "tokens" },
-        { value: `$${costUsd.toFixed(5)}`, label: "USD" },
+        { value: generationLabel, label: "generations" },
+        { value: tokenLabel, label: "tokens" },
+        { value: costLabel, label: "USD estimate" },
       ],
-      detail: `${totalTokens.toLocaleString()} tokens ($${costUsd.toFixed(
-        5
-      )} USD) · ${cascadedCount} of ${totalElements} scheduled targets locally skipped (${cascadeRate}%). Skips are not individually Axe-verified.`,
+      detail: `${tokenLabel} tokens · ${attemptLabel} application request attempts (SDK-internal retries excluded).${reportedDetail} Legacy cost estimate: ${costLabel}. ${cascadedCount} of ${totalElements} scheduled targets locally skipped (${cascadeRate}%). Skips are not individually Axe-verified.`,
     },
     {
       id: "semantic",
@@ -318,7 +326,7 @@ function mapMetricsToCards(metricsDict, issuesBefore, issuesAfter) {
   if (noCandidate) {
     for (const card of cards) {
       if (card.id === "efficiency") {
-        card.status = { label: "Available Usage", tone: "accent" };
+        if (!partialUsage) card.status = { label: "Available Usage", tone: "accent" };
         continue;
       }
       if (card.id === "semantic" && !hasDeps) {

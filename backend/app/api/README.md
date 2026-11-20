@@ -122,6 +122,23 @@ and have no decoded fields. Oversized inputs use `prompt_too_large` without a
 model call; rejected outputs retain available model usage. Baseline output
 remains plain full-document HTML. See [editable scope and SDG replies](../services/repair/README.md#editable-scope-and-sdg-replies).
 
+Steps also expose `generation_attempted` and an `llm` record with raw provider
+usage, per-application-attempt evidence, final-attempt latency and generation
+elapsed time. Terminal request failures keep these records. In
+`metrics.efficiency`, `api_calls` counts attempted logical generations;
+`requests` counts application calls to the SDK, including application retries.
+`request_count_basis: application_attempts` explicitly excludes unobserved
+SDK-internal retries. If the count is unknown, `requests` is null and
+`known_requests` retains the observed subtotal.
+
+Token totals are null when any observed application attempt lacks that field.
+`reported_usage` retains known subtotals and `usage_complete` identifies field
+coverage. Reported zero is preserved; no generation has known zero usage. The
+provider's total is retained rather than reconstructed. The legacy cost estimate
+keeps its existing prices/formula but becomes null when required usage is unknown.
+The planned experiment export will omit computed cost for external calculation.
+See [generation attempts and reported usage](../services/repair/README.md#generation-attempts-and-reported-usage).
+
 Each step's `rules` retains the original reported rule IDs. `requested_rules`
 lists the rules passed to generation (including a call that raises), and is empty
 when no generation was attempted. `skipped_rules` contains local cascade evidence:
@@ -232,6 +249,15 @@ The flag applies the no-candidate policy above and skips detecting the fallback
 as generated output. A valid initial scan is still required. When replaying an
 accepted or partial run, pass its prepared `candidate_html` as `html_repaired`.
 Identical original/repaired HTML alone never implies generation failure.
+
+When providing `efficiency_data`, include reported fields explicitly, including
+zero values. Omitted/null token components remain unknown. An explicit
+`total_tokens` (including null) is preserved. For manual data only, omitting that
+field allows a component sum when input/output/thought counts are all supplied;
+`total_tokens_source: supplied_components` distinguishes it from provider totals.
+Passing the complete efficiency response back preserves its coverage/subtotals.
+Without a repair run or supplied usage, generation/request counts, tokens and
+cost are unavailable, not a measured zero-cost run.
 
 Successful evaluation returns `effectiveness`, `safety`, `structure`, `efficiency`,
 `semantic`, `evaluation` (artifact, score basis, and fallback flag), and

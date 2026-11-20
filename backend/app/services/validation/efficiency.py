@@ -1,72 +1,89 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from app.services.repair.cascade import CASCADE_SKIP_STATUSES
+from app.services.repair.usage import TOKEN_FIELDS, summarize_usage, token_count
 
 DEFAULT_PROMPT_PRICE_PER_M = 0.075
 DEFAULT_COMPLETION_PRICE_PER_M = 0.30
+_UNSET = object()
 
 
 @dataclass
 class EfficiencyResult:
     """Per-document Repair Efficiency metrics."""
 
-    api_calls: int
-    prompt_tokens: int
-    completion_tokens: int
-    thought_tokens: int
-    total_tokens: int
-    cost_usd: float
+    api_calls: int | None
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    thought_tokens: int | None
+    total_tokens: int | None
+    cost_usd: float | None
     cascaded_count: int = 0
     patched_count: int = 0
     total_elements: int = 0
     cascade_rate: float = 0.0
+    requests: int | None = None
+    known_requests: int = 0
+    request_count_complete: bool = False
+    request_count_basis: str = "application_attempts"
+    reported_usage: dict[str, int] = field(default_factory=dict)
+    usage_complete: dict[str, bool] = field(default_factory=dict)
+    total_tokens_source: str = "supplied_components"
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "api_calls": self.api_calls,
-            "prompt_tokens": self.prompt_tokens,
-            "completion_tokens": self.completion_tokens,
-            "thought_tokens": self.thought_tokens,
-            "total_tokens": self.total_tokens,
-            "cost_usd": self.cost_usd,
-            "cascaded_count": self.cascaded_count,
-            "patched_count": self.patched_count,
-            "total_elements": self.total_elements,
-            "cascade_rate": self.cascade_rate,
-        }
+        return asdict(self)
 
 
 def compute_cost(
-    prompt_tokens: int,
-    completion_tokens: int,
-    thought_tokens: int = 0,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+    thought_tokens: int | None = 0,
     price_per_m_prompt: float = DEFAULT_PROMPT_PRICE_PER_M,
     price_per_m_completion: float = DEFAULT_COMPLETION_PRICE_PER_M,
-) -> float:
-    """Compute monetary API cost in USD based on token counts and pricing per 1M tokens."""
+) -> float | None:
+    """Legacy display estimate; price assumptions are unchanged, unknown usage is null."""
+    if any(value is None for value in (prompt_tokens, completion_tokens, thought_tokens)):
+        return None
     prompt_cost = (prompt_tokens / 1_000_000.0) * price_per_m_prompt
-    # Thought tokens are billed at the completion output rate
+    # Legacy display assumption, retained here; experiment pricing is external.
     output_cost = ((completion_tokens + thought_tokens) / 1_000_000.0) * price_per_m_completion
     return round(prompt_cost + output_cost, 6)
 
 
 def calculate_efficiency(
-    api_calls: int,
-    prompt_tokens: int,
-    completion_tokens: int,
-    thought_tokens: int = 0,
+    api_calls: int | None,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+    thought_tokens: int | None = 0,
     cascaded_count: int = 0,
     patched_count: int = 0,
     total_elements: int = 0,
     price_per_m_prompt: float = DEFAULT_PROMPT_PRICE_PER_M,
     price_per_m_completion: float = DEFAULT_COMPLETION_PRICE_PER_M,
+    *,
+    total_tokens=_UNSET,
+    requests: int | None = None,
+    known_requests: int | None = None,
+    request_count_complete: bool | None = None,
+    reported_usage: dict | None = None,
+    usage_complete: dict | None = None,
+    total_tokens_source: str | None = None,
 ) -> EfficiencyResult:
-    total_toks = prompt_tokens + completion_tokens + thought_tokens
+    components = [token_count(value) for value in (prompt_tokens, completion_tokens, thought_tokens)]
+    derived_total = total_tokens is _UNSET
+    total_toks = (sum(components) if all(v is not None for v in components) else None) \
+        if derived_total else token_count(total_tokens)
+    counts = dict(zip(TOKEN_FIELDS, [*components, total_toks]))
+    complete = {name: value is not None and (usage_complete or {}).get(name, True)
+                for name, value in counts.items()}
+    reported = {name: token_count((reported_usage or {}).get(name, value)) or 0
+                for name, value in counts.items()}
+    counts = {name: value if complete[name] else None for name, value in counts.items()}
     cost = compute_cost(
-        prompt_tokens=prompt_tokens,
-        completion_tokens=completion_tokens,
-        thought_tokens=thought_tokens,
+        prompt_tokens=counts["prompt_tokens"],
+        completion_tokens=counts["completion_tokens"],
+        thought_tokens=counts["thought_tokens"],
         price_per_m_prompt=price_per_m_prompt,
         price_per_m_completion=price_per_m_completion,
     )
@@ -77,16 +94,19 @@ def calculate_efficiency(
         cascade_rate = 0.0
 
     return EfficiencyResult(
-        api_calls=max(0, api_calls),
-        prompt_tokens=max(0, prompt_tokens),
-        completion_tokens=max(0, completion_tokens),
-        thought_tokens=max(0, thought_tokens),
-        total_tokens=max(0, total_toks),
+        api_calls=token_count(api_calls),
+        **counts,
         cost_usd=cost,
         cascaded_count=max(0, cascaded_count),
         patched_count=max(0, patched_count),
         total_elements=max(0, total_elements),
         cascade_rate=cascade_rate,
+        requests=0 if requests is None and api_calls == 0 else requests,
+        known_requests=known_requests if known_requests is not None else (requests or 0),
+        request_count_complete=request_count_complete if request_count_complete is not None
+        else (requests is not None or api_calls == 0),
+        reported_usage=reported, usage_complete=complete,
+        total_tokens_source=total_tokens_source or ("supplied_components" if derived_total else "supplied_total"),
     )
 
 
@@ -97,17 +117,11 @@ def calculate_efficiency_from_run(
 ) -> EfficiencyResult:
     """Calculate per-document Repair Efficiency directly from a RepairRun object."""
     if run is None:
-        return calculate_efficiency(0, 0, 0, 0)
+        return calculate_efficiency(None, None, None, None, total_tokens=None)
 
     steps = getattr(run, "steps", [])
-    api_calls = getattr(run, "api_calls", sum(1 for s in steps if getattr(s, "llm", None)))
-    prompt_tokens = getattr(run, "prompt_tokens", sum(s.llm.prompt_tokens for s in steps if getattr(s, "llm", None)))
-    completion_tokens = getattr(
-        run, "completion_tokens", sum(s.llm.completion_tokens for s in steps if getattr(s, "llm", None))
-    )
-    thought_tokens = getattr(
-        run, "thought_tokens", sum(getattr(s.llm, "thought_tokens", 0) for s in steps if getattr(s, "llm", None))
-    )
+    usage = summarize_usage(steps)
+    usage.pop("request_count_basis")  # Fixed by EfficiencyResult's documented default.
 
     # Whole-target local skips only; neither verified repairs nor cost savings.
     cascaded_count = sum(1 for s in steps if getattr(s, "status", "") in CASCADE_SKIP_STATUSES)
@@ -115,10 +129,7 @@ def calculate_efficiency_from_run(
     total_elements = len(steps)
 
     return calculate_efficiency(
-        api_calls=api_calls,
-        prompt_tokens=prompt_tokens,
-        completion_tokens=completion_tokens,
-        thought_tokens=thought_tokens,
+        **usage,
         cascaded_count=cascaded_count,
         patched_count=patched_count,
         total_elements=total_elements,

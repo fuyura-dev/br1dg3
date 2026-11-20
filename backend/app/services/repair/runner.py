@@ -7,7 +7,7 @@ from app.services.repair.cascade import (
     supported_condition,
 )
 from app.services.repair.context import ContextExtractor
-from app.services.repair.llm import LLMResult, generate
+from app.services.repair.llm import LLMRequestError, LLMResult, generate
 from app.services.repair.log_streamer import streamer
 from app.services.repair.order import dependency_view, order_violations_by_dependency
 from app.services.repair.patch import (
@@ -20,6 +20,7 @@ from app.services.repair.patch import (
 from app.services.repair.prompt import build_baseline_prompt, build_sdg_prompt
 from app.services.repair.root_view import RootViewTooLarge
 from app.services.repair.scope import apply_scoped_reply, parse_scoped_reply
+from app.services.repair.usage import summarize_usage
 from app.services.sdg.builder import SDGBuilder
 
 
@@ -41,6 +42,7 @@ class Step:
     edit_scope: dict | None = None     # selected input scope and limits, without live DOM objects
     reply_scope: str | None = None     # declared scope, including a subsequently rejected patch
     reply_html: str | None = None      # decoded HTML payload; raw JSON remains in llm.text
+    generation_attempted: bool | None = None  # null for legacy/manual step records
 
 
 @dataclass
@@ -78,32 +80,32 @@ class RepairRun:
             "unmapped": self.unmapped,
         }
 
-    def _sum(self, name):
-        return sum(getattr(s.llm, name) for s in self.steps if s.llm)
+    def usage_summary(self):
+        return summarize_usage(self.steps)
 
     @property
     def api_calls(self):
-        return sum(1 for s in self.steps if s.llm)
+        return self.usage_summary()["api_calls"]
 
     @property
-    def requests(self):                 # includes retried transient errors
-        return self._sum("attempts")
+    def requests(self):                 # application attempts, not SDK-internal requests
+        return self.usage_summary()["requests"]
 
     @property
     def prompt_tokens(self):
-        return self._sum("prompt_tokens")
+        return self.usage_summary()["prompt_tokens"]
 
     @property
     def completion_tokens(self):
-        return self._sum("completion_tokens")
+        return self.usage_summary()["completion_tokens"]
 
     @property
     def thought_tokens(self):
-        return self._sum("thought_tokens")
+        return self.usage_summary()["thought_tokens"]
 
     @property
     def total_tokens(self):
-        return self._sum("total_tokens")
+        return self.usage_summary()["total_tokens"]
 
 
 def _pending_violations(pending, table):
@@ -130,7 +132,7 @@ def _step(current, token, table, pending, original_conditions, *, has_accepted_p
 
     skipped = infer_skips(target, rules, original_conditions, has_accepted_patch=has_accepted_patch)
     skipped_ids = {item["rule_id"] for item in skipped}
-    step = Step(token, target.name, rules, "", node_id=node_id, skipped_rules=skipped)
+    step = Step(token, target.name, rules, "", node_id=node_id, skipped_rules=skipped, generation_attempted=False)
     if skipped_ids == set(rules):
         step.status = "cascade_skipped"
         streamer.log(f"[CASCADE SKIPPED {token}] <{target.name}> | Rules: {rules} | Local inference: {skipped}")
@@ -163,8 +165,11 @@ def _step(current, token, table, pending, original_conditions, *, has_accepted_p
 
     try:
         step.requested_rules = active_rules
+        step.generation_attempted = True
         step.llm = generate(sdg_prompt)
     except Exception as exc:                                               # noqa: BLE001
+        if isinstance(exc, LLMRequestError):
+            step.llm = exc.result
         step.status, step.error = "llm_error", f"{type(exc).__name__}: {exc}"
         streamer.log(f"[STEP {token}] LLM Error: {step.error}")
         return step, current
@@ -243,12 +248,15 @@ def run_baseline(html, violations):
     if not violations:
         return RepairRun(html, [], 0)
 
-    step = Step("baseline", None, [v.get("id") for v in violations], "")
+    step = Step("baseline", None, [v.get("id") for v in violations], "", generation_attempted=False)
     try:
         baseline_prompt = build_baseline_prompt(html, violations)
         step.requested_rules = list(step.rules)
+        step.generation_attempted = True
         step.llm = generate(baseline_prompt)
     except Exception as exc:                                              # noqa: BLE001
+        if isinstance(exc, LLMRequestError):
+            step.llm = exc.result
         step.status, step.error = "llm_error", f"{type(exc).__name__}: {exc}"
         return RepairRun(html, [step], 0)
     if not step.llm.ok:                                                   # truncated / failed / empty
