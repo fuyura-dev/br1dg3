@@ -127,6 +127,46 @@ be calculated externally in Excel using the researcher's documented prices.
 The future document-level export must exclude computed monetary cost; that
 export is separate work and is not implemented by this change.
 
+### Completed-response measurement
+
+Evaluation adds `efficiency.completed_response_count` and
+`efficiency.completed_response_usage` for the experiment's completed-response
+scope. The original `api_calls`, `requests`, all-attempt token summaries, display
+cost and raw attempt records keep their existing meanings.
+
+`summarize_completed_usage()` counts recorded responses whose status is
+`completed`, including empty, rejected or ineffective replies. Patch acceptance
+and accessibility improvement do not determine inclusion. Recorded errors and
+other recognized non-completed statuses are excluded, even if they report usage.
+Only the included responses supply input, output, thought and provider-total
+token sums; provider totals are not reconstructed from components. No cost or
+rate is calculated in this additional summary.
+
+`completed_response_usage` includes `basis: completed_responses`, the four token
+fields, `reported_usage` subtotals, per-field `usage_complete`,
+`total_tokens_source: provider_reported`, `known_completed_responses`, and
+`count_complete`. Missing usage on an included response makes that token total
+null while retaining known subtotals. Missing/unrecognized completion status or
+an incomplete attempt history makes the completed count and token totals null;
+known completed responses and their reported subtotals remain available. A
+legacy final-response record establishes a complete count only when it records
+exactly one attempt and a recognized status. No completion is inferred from an
+`applied` patch or legacy `ok` flag.
+
+An error without usage followed by one completed response reporting 100 tokens
+therefore yields completed count 1 and completed-response total 100; the existing
+all-attempt total remains null. With a known history containing no completed
+responses, the new count and tokens are zero **within this scope**, not proof of
+zero resources consumed or zero billed cost. Standalone evaluation without
+completion evidence leaves both new fields null. Replaying the complete
+efficiency result through `efficiency_data` preserves the new fields.
+
+The planned export will use these measurements and retain failure/missingness
+indicators. Failed documents stay in the experiment. External spreadsheet cost
+must be labeled as an estimate for completed responses; it does not establish
+total expenditure. Provider token-category/billing interpretation still needs
+verification before spreadsheet formulas are frozen.
+
 Run `python -m unittest tests.test_usage_recording tests.test_efficiency` for
 controlled retry, missing-data, raw usage, evaluator and saved-record tests.
 

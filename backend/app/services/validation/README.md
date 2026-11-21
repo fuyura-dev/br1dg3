@@ -4,7 +4,11 @@
 repair and evaluation APIs for both SDG and zero-shot repairs. It computes exact,
 unpruned Zhang–Shasha tree edit distance (TED), with unit costs for node insertion,
 deletion, and tag-name changes. Similarity is `max(0, 1 - TED / max_nodes)`; the
-preservation threshold is 0.85 by default.
+preservation threshold is 0.85 by default. The returned similarity retains its
+floating-point precision and is compared with the threshold before any display
+rounding. The frontend rounds only its display and uses the returned preservation
+verdict. Spreadsheet calculations should likewise apply the threshold to the
+unrounded similarity derived from TED and both node counts.
 
 Trees contain ordered element nodes after shared script/style preprocessing.
 Text, attributes, and comments are excluded; fragments use a synthetic document
@@ -232,7 +236,9 @@ preservation verdict, node counts, and elapsed seconds. Each timing includes
 parsing and metric calculation; it is not LLM repair latency.
 
 The legacy function, `calculate_legacy_pruned_structural_preservation()`, retains
-the old pruning behavior for comparison. It can change edit costs and preservation
+the old pruning behavior for comparison but shares the corrected unrounded
+scoring; it does not reproduce historical round-before-threshold results.
+Pruning can change edit costs and preservation
 verdicts, so use the unpruned metric consistently for both repair approaches in
 the main experiment. Running the comparison command does not change API behavior
 or any saved configuration; the APIs always use the unpruned function.

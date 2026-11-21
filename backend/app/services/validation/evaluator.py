@@ -165,6 +165,7 @@ def evaluate_repair(
             **{key: efficiency_data[key] for key in (
                 "total_tokens", "requests", "known_requests", "request_count_complete",
                 "reported_usage", "usage_complete", "total_tokens_source",
+                "completed_response_count", "completed_response_usage",
             ) if key in efficiency_data},
         )
     else:

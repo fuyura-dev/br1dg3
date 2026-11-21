@@ -94,6 +94,9 @@ class TestUsageRecording(unittest.TestCase):
         self.assertEqual(summary["reported_usage"]["total_tokens"], 19)
         self.assertFalse(summary["usage_complete"]["total_tokens"])
         self.assertIsNone(self.evaluate(run).efficiency.cost_usd)
+        completed = self.evaluate(run).efficiency
+        self.assertEqual(completed.completed_response_count, 1)
+        self.assertEqual(completed.completed_response_usage["total_tokens"], 19)
         self.assertEqual(self.create.call_args_list[0], self.create.call_args_list[1])
         self.sleep.assert_called_once_with(1)
 
@@ -110,11 +113,27 @@ class TestUsageRecording(unittest.TestCase):
                 self.assertEqual(run.requests, 4)
                 self.assertIsNone(run.total_tokens)
                 self.assertEqual(len(run.steps[0].llm.attempt_records), 4)
+                completed = self.evaluate(run).efficiency
+                self.assertEqual(completed.completed_response_count, 0)
+                self.assertEqual(completed.completed_response_usage["total_tokens"], 0)
                 self.assertEqual(self.create.call_count, 4)
                 self.assertEqual(self.sleep.call_args_list, [call(1), call(2), call(4)])
                 for record in run.steps[0].llm.attempt_records:
                     self.assertIsNone(record.raw_usage)
                     self.assertIn("Unavailable", record.error)
+
+    def test_completed_usage_is_shared_by_both_methods_even_with_empty_reply(self):
+        for method in (runner.run_baseline, runner.run_sdg):
+            with self.subTest(method=method.__name__):
+                self.create.side_effect = [TransientError("Retry"), self.response(self.usage, text="")]
+                run = method(self.html, self.violations)
+                self.assertTrue(run.fallback_used)
+                self.assertEqual(run.api_calls, 1)
+                self.assertEqual(run.requests, 2)
+                self.assertIsNone(run.total_tokens)
+                completed = self.evaluate(run).efficiency
+                self.assertEqual(completed.completed_response_count, 1)
+                self.assertEqual(completed.completed_response_usage["total_tokens"], 19)
 
     def test_nontransient_failure_has_one_attempt(self):
         self.create.side_effect = ValueError("Bad request")
@@ -141,16 +160,21 @@ class TestUsageRecording(unittest.TestCase):
         self.assertEqual(run.prompt_tokens, 14)
         self.assertIsNone(run.completion_tokens)
         self.assertEqual(run.usage_summary()["reported_usage"]["completion_tokens"], 5)
+        self.assertEqual(self.evaluate(run).efficiency.completed_response_usage["prompt_tokens"], 10)
 
     def test_incomplete_and_unapplicable_replies_still_retain_usage(self):
         for status, text, expected in (("incomplete", "<html>", "llm_not_ok:incomplete"),
-                                       ("completed", "not HTML", "not_html")):
+                                       ("completed", "not HTML", "not_html"),
+                                       ("completed", "", "llm_not_ok:completed")):
             with self.subTest(status=status):
                 self.create.return_value = self.response(self.usage, status, text)
                 run = self.run_baseline()
                 self.assertEqual(run.steps[0].status, expected)
                 self.assertEqual(run.total_tokens, 19)
                 self.assertEqual(self.evaluate(run).efficiency.total_tokens, 19)
+                completed = self.evaluate(run).efficiency
+                self.assertEqual(completed.completed_response_count, int(status == "completed"))
+                self.assertEqual(completed.completed_response_usage["total_tokens"], 19 if status == "completed" else 0)
 
     def test_elapsed_time_covers_generation_and_last_latency_is_separate(self):
         self.create.side_effect = [TransientError("Retry"), self.response(self.usage)]
@@ -167,6 +191,10 @@ class TestUsageRecording(unittest.TestCase):
         self.assertIsNone(run.requests)
         self.assertEqual(run.usage_summary()["known_requests"], 0)
         self.assertIsNone(run.total_tokens)
+
+        completed = self.evaluate(run).efficiency
+        self.assertIsNone(completed.completed_response_count)
+        self.assertIsNone(completed.completed_response_usage["total_tokens"])
 
     def test_prompt_failure_does_not_count_a_generation(self):
         with patch.object(runner, "build_baseline_prompt", side_effect=RuntimeError("Prompt failed")):
@@ -209,6 +237,8 @@ class TestUsageRecording(unittest.TestCase):
                 self.create.side_effect = responses
                 run = self.run_baseline()
                 metrics = self.evaluate(run).efficiency.to_dict()
+                self.assertEqual(metrics["completed_response_count"], 1)
+                self.assertEqual(metrics["completed_response_usage"]["total_tokens"], 19)
                 report = evaluate_repair(self.html, run.fixed_html, violations_before=self.violations,
                                          violations_after=[], efficiency_data=metrics)
                 self.assertEqual(report.efficiency.to_dict(), metrics)
@@ -221,6 +251,8 @@ class TestUsageRecording(unittest.TestCase):
                 self.assertIsNone(report.efficiency.requests)
                 self.assertIsNone(report.efficiency.total_tokens)
                 self.assertIsNone(report.efficiency.cost_usd)
+                self.assertIsNone(report.efficiency.completed_response_count)
+                self.assertIsNone(report.efficiency.completed_response_usage)
 
 
 if __name__ == "__main__":

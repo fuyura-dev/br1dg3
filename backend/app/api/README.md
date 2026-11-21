@@ -151,6 +151,13 @@ keeps its existing prices/formula but becomes null when required usage is unknow
 The planned experiment export will omit computed cost for external calculation.
 See [generation attempts and reported usage](../services/repair/README.md#generation-attempts-and-reported-usage).
 
+Evaluation also returns `metrics.efficiency.completed_response_count` and
+`completed_response_usage` for completed responses only, regardless of patch
+acceptance. This separate summary retains token subtotals and completeness
+indicators; missing completion evidence remains unavailable. It does not alter
+the original all-attempt fields or include a computed monetary cost. See the
+[completed-response measurement policy](../services/repair/README.md#completed-response-measurement).
+
 Each step's `rules` retains the original reported rule IDs. `requested_rules`
 lists the rules passed to generation (including a call that raises), and is empty
 when no generation was attempted. `skipped_rules` contains local cascade evidence:
@@ -268,6 +275,8 @@ zero values. Omitted/null token components remain unknown. An explicit
 field allows a component sum when input/output/thought counts are all supplied;
 `total_tokens_source: supplied_components` distinguishes it from provider totals.
 Passing the complete efficiency response back preserves its coverage/subtotals.
+This includes `completed_response_count` and `completed_response_usage`; older
+or manually supplied totals without completion evidence leave these fields null.
 Without a repair run or supplied usage, generation/request counts, tokens and
 cost are unavailable, not a measured zero-cost run.
 

@@ -222,7 +222,7 @@ def calculate_legacy_pruned_structural_preservation(
     html_repaired: str | None,
     threshold: float = 0.85,
 ) -> StructureResult:
-    """Reproduce the old pruned metric for comparison, not experimental reporting."""
+    """Calculate comparison-only TED with legacy pruning and unrounded scoring."""
     return _calculate_structural_preservation(
         html_original, html_repaired, threshold, legacy_pruning=True,
     )
@@ -260,7 +260,8 @@ def _calculate_structural_preservation(
         if legacy_pruning:
             t_orig, t_rep = prune_shared_identical_subtrees(t_orig, t_rep)
         ted = zss_tree_edit_distance(t_orig, t_rep)
-    similarity = round(max(0.0, 1.0 - (ted / max_nodes)), 4)
+    # Keep precision for thresholding and downstream analysis; round only displays.
+    similarity = max(0.0, 1.0 - (ted / max_nodes))
     preserved = similarity >= threshold
 
     return StructureResult(

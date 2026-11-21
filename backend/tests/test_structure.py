@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from app.services.validation.structure import (
     calculate_legacy_pruned_structural_preservation,
@@ -43,13 +44,13 @@ class TestStructuralPreservation(unittest.TestCase):
         self.assertEqual(result.repaired_nodes, 11)
         self.assertEqual(result.max_nodes, 14)
         self.assertEqual(result.tree_edit_distance, 3)
-        self.assertEqual(result.structure_similarity, 0.7857)
+        self.assertAlmostEqual(result.structure_similarity, 11 / 14)
         self.assertFalse(result.structure_preserved)
 
         legacy = calculate_legacy_pruned_structural_preservation(orig, rep)
         self.assertEqual(legacy.max_nodes, 14)
         self.assertEqual(legacy.tree_edit_distance, 1)
-        self.assertEqual(legacy.structure_similarity, 0.9286)
+        self.assertAlmostEqual(legacy.structure_similarity, 13 / 14)
         self.assertTrue(legacy.structure_preserved)
 
     def test_repeated_subtree_insertion_counts_all_inserted_nodes(self):
@@ -59,7 +60,7 @@ class TestStructuralPreservation(unittest.TestCase):
 
         result = calculate_structural_preservation(orig, rep)
         self.assertEqual(result.tree_edit_distance, 3)
-        self.assertEqual(result.structure_similarity, 0.7857)
+        self.assertAlmostEqual(result.structure_similarity, 11 / 14)
         self.assertFalse(result.structure_preserved)
 
         legacy = calculate_legacy_pruned_structural_preservation(orig, rep)
@@ -103,6 +104,29 @@ class TestStructuralPreservation(unittest.TestCase):
         self.assertEqual(result.structure_similarity, 0.0)
         self.assertFalse(result.structure_preserved)
         self.assertTrue(result.unparseable)
+
+    def test_threshold_uses_unrounded_similarity(self):
+        # Isolate scoring from expensive TED on large trees. All three measured
+        # similarities previously rounded to 0.85 before classification.
+        cases = (
+            (3751, 0.84996, False),
+            (3750, 0.85000, True),
+            (3749, 0.85004, True),
+        )
+        for calculate in (
+            calculate_structural_preservation,
+            calculate_legacy_pruned_structural_preservation,
+        ):
+            for distance, similarity, preserved in cases:
+                with (
+                    self.subTest(method=calculate.__name__, distance=distance),
+                    patch("app.services.validation.structure.count_nodes", side_effect=(25000, 25000)),
+                    patch("app.services.validation.structure.zss_tree_edit_distance", return_value=distance),
+                ):
+                    result = calculate('<html><div></div></html>', '<html><main></main></html>')
+
+                    self.assertAlmostEqual(result.structure_similarity, similarity)
+                    self.assertEqual(result.structure_preserved, preserved)
 
 
 if __name__ == "__main__":

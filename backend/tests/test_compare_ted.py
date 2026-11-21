@@ -42,10 +42,10 @@ class TestCompareTed(unittest.TestCase):
         results = json.loads(output.getvalue())
         self.assertEqual(set(results), {"unpruned", "legacy_pruned"})
         self.assertEqual(results["unpruned"]["tree_edit_distance"], 3)
-        self.assertEqual(results["unpruned"]["structure_similarity"], 0.7857)
+        self.assertAlmostEqual(results["unpruned"]["structure_similarity"], 11 / 14)
         self.assertFalse(results["unpruned"]["structure_preserved"])
         self.assertEqual(results["legacy_pruned"]["tree_edit_distance"], 1)
-        self.assertEqual(results["legacy_pruned"]["structure_similarity"], 0.9286)
+        self.assertAlmostEqual(results["legacy_pruned"]["structure_similarity"], 13 / 14)
         self.assertTrue(results["legacy_pruned"]["structure_preserved"])
         for result in results.values():
             self.assertEqual(result["max_nodes"], 14)

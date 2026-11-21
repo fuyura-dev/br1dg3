@@ -2,7 +2,12 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from app.services.repair.cascade import CASCADE_SKIP_STATUSES
-from app.services.repair.usage import TOKEN_FIELDS, summarize_usage, token_count
+from app.services.repair.usage import (
+    TOKEN_FIELDS,
+    summarize_completed_usage,
+    summarize_usage,
+    token_count,
+)
 
 DEFAULT_PROMPT_PRICE_PER_M = 0.075
 DEFAULT_COMPLETION_PRICE_PER_M = 0.30
@@ -30,6 +35,8 @@ class EfficiencyResult:
     reported_usage: dict[str, int] = field(default_factory=dict)
     usage_complete: dict[str, bool] = field(default_factory=dict)
     total_tokens_source: str = "supplied_components"
+    completed_response_count: int | None = None
+    completed_response_usage: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -69,6 +76,8 @@ def calculate_efficiency(
     reported_usage: dict | None = None,
     usage_complete: dict | None = None,
     total_tokens_source: str | None = None,
+    completed_response_count: int | None = None,
+    completed_response_usage: dict[str, Any] | None = None,
 ) -> EfficiencyResult:
     components = [token_count(value) for value in (prompt_tokens, completion_tokens, thought_tokens)]
     derived_total = total_tokens is _UNSET
@@ -107,6 +116,8 @@ def calculate_efficiency(
         else (requests is not None or api_calls == 0),
         reported_usage=reported, usage_complete=complete,
         total_tokens_source=total_tokens_source or ("supplied_components" if derived_total else "supplied_total"),
+        completed_response_count=token_count(completed_response_count),
+        completed_response_usage=completed_response_usage,
     )
 
 
@@ -130,6 +141,7 @@ def calculate_efficiency_from_run(
 
     return calculate_efficiency(
         **usage,
+        **summarize_completed_usage(steps),
         cascaded_count=cascaded_count,
         patched_count=patched_count,
         total_elements=total_elements,
