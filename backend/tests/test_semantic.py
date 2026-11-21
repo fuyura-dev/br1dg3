@@ -44,10 +44,10 @@ class TestSemanticDependencyPreservation(unittest.TestCase):
         self.assertEqual(result.broken_count, 0)
 
     def test_breaking_edit_detected(self):
-        # Delete the form and its inputs
+        # Keep both endpoints identifiable, but move the inputs outside the form.
         bad_repair = self.sample_html.replace(
-            '<form id="signup">', '<!-- form removed -->'
-        ).replace('</form>', '')
+            '<form id="signup">', '<div>'
+        ).replace('</form>', '</div>') + '<form id="signup"></form>'
         result = calculate_semantic_preservation(self.sample_html, bad_repair)
         self.assertLess(result.preservation_rate, 100.0)
         self.assertGreater(result.broken_count, 0)
@@ -60,6 +60,7 @@ class TestSemanticDependencyPreservation(unittest.TestCase):
         result = calculate_semantic_preservation(plain, plain)
         self.assertEqual(result.dependencies_before, 0)
         self.assertFalse(result.has_dependencies)
+        self.assertIsNone(result.preservation_rate)
 
     def test_unparseable_or_empty_repaired_html(self):
         result = calculate_semantic_preservation(self.sample_html, "")

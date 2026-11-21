@@ -289,3 +289,14 @@ available. The checker does not rewrite the repair output or control repair
 acceptance. See the [validation rules and limitations](../services/validation/README.md#syntactic-validity).
 Unlike `/api/evaluate`, `/api/repair` still returns HTTP 503 when
 its final scan fails, as described above.
+
+The `semantic` result now identifies `metric: "sdg_relationship_preservation"` and
+`metric_version: 2`. This is preservation of extracted directed SDG edges, not a
+semantic-validity check. The rate keeps its `preservation_rate` name, and
+`relationships_preserved` is the clearer alias for `dependencies_valid`. Status,
+per-edge outcomes, matching evidence, known subtotals and unresolved counts are
+returned. Zero original edges produce N/A; extraction failures or unresolved
+edge correspondence leave the rate null. Do not substitute 100%, zero or a
+known-only ratio. Existing no-candidate zero-credit scoring remains separately
+labeled when the original denominator is known. See the [counting, matching and
+availability policy](../services/validation/README.md#sdg-relationship-preservation).

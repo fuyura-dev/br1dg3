@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Any
 
 from app.services.detection.detect import DetectionError, scan_with_report
@@ -177,21 +177,18 @@ def evaluate_repair(
         f"(legacy cost estimate: {cost_label})"
     )
 
-    # 5. Metric 5: Semantic Dependency Preservation
+    # 5. Metric 5: modeled SDG relationship preservation, not semantic validity.
     semantic = calculate_semantic_preservation(
         html_original=html_original,
         html_repaired=None if fallback_used else html_repaired,
+        no_candidate=fallback_used,
     )
     if fallback_used:
-        semantic = replace(
-            semantic,
-            preservation_rate=0.0 if semantic.has_dependencies else None,
-            broken_count=None, broken_examples=[],
-        )
         streamer.log("[METRICS] No accepted candidate: failure-policy scores; fallback HTML was not scored.")
+    preservation = f"{semantic.preservation_rate:.2f}%" if semantic.preservation_rate is not None else "N/A"
     streamer.log(
-        f"[METRICS] 5/5 Semantic: {semantic.dependencies_valid} of {semantic.dependencies_before} relationships intact "
-        f"({semantic.preservation_rate}%)"
+        f"[METRICS] 5/5 SDG relationship preservation: {preservation} ({semantic.status}); "
+        f"preserved={semantic.dependencies_valid}, original={semantic.dependencies_before}"
     )
 
     return EvaluationReport(

@@ -253,24 +253,27 @@ function mapMetricsToCards(metricsDict, issuesBefore, issuesAfter) {
       ? { label: `${cascadedCount} Locally Skipped`, tone: "accent" }
       : { label: "Completed", tone: "accent" };
 
-  // 5. Semantic Dependency Preservation (SDP_i)
-  const hasDeps = Boolean(sem.has_dependencies);
-  const semRate = sem.preservation_rate ?? 100;
-  const semScore = Math.max(0, Math.min(100, Math.round(semRate)));
-  const brokenCount = sem.broken_count ?? 0;
-  const validDeps = sem.dependencies_valid ?? 0;
-  const totalDeps = sem.dependencies_before ?? 0;
-
-  let semanticStatus;
-  if (!hasDeps) {
-    semanticStatus = { label: "N/A (No Dependencies)", tone: "accent" };
-  } else if (semRate === 100) {
-    semanticStatus = { label: "100% Intact", tone: "success" };
-  } else if (semRate >= 80) {
-    semanticStatus = { label: "Mostly Intact", tone: "accent" };
-  } else {
-    semanticStatus = { label: `${brokenCount} Broken`, tone: "warning" };
-  }
+  // 5. Extracted SDG relationship preservation; old records keep their own label.
+  const preservationMetric = sem.metric === "sdg_relationship_preservation";
+  const hasDeps = sem.has_dependencies;
+  const semRate = hasDeps === true ? sem.preservation_rate : null;
+  const semScore = semRate == null ? null : Math.max(0, Math.min(100, Math.round(semRate)));
+  const semanticStatus = sem.status === "unresolved_matching"
+    ? { label: "Matching Unresolved", tone: "warning" }
+    : hasDeps === false
+    ? { label: "N/A (No Relationships)", tone: "accent" }
+    : semRate == null
+    ? { label: "Measurement Unavailable", tone: "warning" }
+    : { label: preservationMetric ? "Graph Preservation Measured" : "Legacy Measurement", tone: "accent" };
+  const semanticDetail = sem.status === "unresolved_matching"
+    ? `${sem.preserved_observed} confirmed preserved; ${sem.not_preserved_observed} not preserved; ${sem.unresolved_count} unresolved. The overall rate is unavailable.`
+    : hasDeps === false
+    ? "No original extracted relationships; excluded only from this metric."
+    : semRate == null
+    ? "Relationship evaluation could not establish a result; no zero or perfect score is assigned."
+    : preservationMetric
+    ? `${sem.dependencies_valid} of ${sem.dependencies_before} original SDG connections preserved. This measures graph preservation, not semantic correctness.`
+    : "Historical semantic measurement; reevaluate saved artifacts for the current preservation definition.";
 
   const cards = [
     {
@@ -314,12 +317,12 @@ function mapMetricsToCards(metricsDict, issuesBefore, issuesAfter) {
     },
     {
       id: "semantic",
-      label: "Semantic Dependency Preservation",
+      label: preservationMetric ? "Semantic Dependency Preservation" : "Semantic Dependency Preservation (Legacy)",
       score: semScore,
+      displayValue: semRate == null ? "N/A" : `${semRate.toFixed(2)}%`,
+      showBar: semRate != null,
       status: semanticStatus,
-      detail: hasDeps
-        ? `${validDeps} of ${totalDeps} relationships intact (${brokenCount} broken)`
-        : "No semantic relationships present in document",
+      detail: semanticDetail,
     },
   ];
 
@@ -329,7 +332,7 @@ function mapMetricsToCards(metricsDict, issuesBefore, issuesAfter) {
         if (!partialUsage) card.status = { label: "Available Usage", tone: "accent" };
         continue;
       }
-      if (card.id === "semantic" && !hasDeps) {
+      if (card.id === "semantic" && semRate == null) {
         card.displayValue = "N/A";
         card.showBar = false;
         continue;
