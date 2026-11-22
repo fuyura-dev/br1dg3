@@ -164,8 +164,25 @@ efficiency result through `efficiency_data` preserves the new fields.
 The planned export will use these measurements and retain failure/missingness
 indicators. Failed documents stay in the experiment. External spreadsheet cost
 must be labeled as an estimate for completed responses; it does not establish
-total expenditure. Provider token-category/billing interpretation still needs
-verification before spreadsheet formulas are frozen.
+total expenditure.
+
+The agreed token policy retains input, output, thought and provider-total fields
+for completed responses. Use the provider-reported total for total-token
+measurements; a reported thought count of zero contributes nothing, while a
+missing thought count stays unknown. The shared `minimal` setting does not
+guarantee zero thinking: Google describes it as near-off for most queries on the
+configured model. In the Interactions API, output and thought counts are separate;
+response pricing uses their sum. See Google's [thinking-level definitions](https://aistudio.google.com/docs/thinking#understanding-thinking-levels)
+and [pricing explanation](https://aistudio.google.com/docs/thinking#pricing).
+For the manuscript/spreadsheet, the agreed output-token quantity `C_i` combines
+reply tokens and thought tokens from completed responses. Raw `completion_tokens`
+continues to mean only the API's `total_output_tokens`; `thought_tokens` stays
+separate. Combine these in Sheets only when both counts are available, and check
+input plus combined output against the saved provider total. Investigate a
+mismatch rather than overwriting the provider value or treating missing counts
+as zero. This definition can preserve the manuscript's `TT = Σ(P_i + C_i)` formula.
+The experiment's price schedule and any cached-input treatment still need to be
+recorded when finalizing the spreadsheet; this policy does not change app prices.
 
 Run `python -m unittest tests.test_usage_recording tests.test_efficiency` for
 controlled retry, missing-data, raw usage, evaluator and saved-record tests.

@@ -239,6 +239,7 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # Runtime data
 backend/data/failed_runs/
+/backend/data/datasets/
 pids
 *.pid
 *.seed
