@@ -8,13 +8,12 @@ from hashlib import sha256
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from fastapi import HTTPException
-
 from app.api import evaluate as evaluate_api
 from app.api import scan as scan_api
 from app.services.detection import detect as detection
 from app.services.detection.preprocess import preprocess
 from app.services.repair import failed_runs
+from fastapi import HTTPException
 
 with patch("google.genai.Client"):
     from app.api import repair as repair_api
@@ -29,6 +28,7 @@ class TestScanReports(unittest.TestCase):
         self.review = {"id": "label", "nodes": [{"target": ["input"]}]}
         self.driver = Mock()
         self.enterContext(patch.object(detection, "_get_driver", return_value=self.driver))
+        self.enterContext(patch.object(detection, "_wait_for_stylesheets", return_value=[]))
         self.enterContext(patch.object(repair_api.streamer, "log"))
         self.enterContext(patch.dict(repair_api.cache, {}, clear=True))
         self.enterContext(redirect_stdout(io.StringIO()))

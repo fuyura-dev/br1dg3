@@ -371,3 +371,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Local debugging scripts and reports
+/debug/

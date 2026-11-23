@@ -9,6 +9,7 @@ class TestDetectionResults(unittest.TestCase):
     def setUp(self):
         self.driver = Mock()
         self.enterContext(patch.object(detection, "_get_driver", return_value=self.driver))
+        self.stylesheets = self.enterContext(patch.object(detection, "_wait_for_stylesheets", return_value=[]))
         self.html = '<html><body><img src="test.png"></body></html>'
 
     def test_successful_empty_scan_returns_no_violations(self):
@@ -76,6 +77,14 @@ class TestDetectionResults(unittest.TestCase):
 
         with self.assertRaises(TimeoutException):
             detection.detect(self.html)
+        self.driver.quit.assert_called_once()
+
+    def test_readiness_failure_stops_before_axe_and_closes_driver(self):
+        self.stylesheets.side_effect = detection.DetectionError("Browser readiness failed")
+
+        with self.assertRaisesRegex(detection.DetectionError, "Browser readiness failed"):
+            detection.detect(self.html)
+        self.driver.execute_async_script.assert_not_called()
         self.driver.quit.assert_called_once()
 
 

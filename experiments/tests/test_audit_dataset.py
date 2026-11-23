@@ -5,9 +5,12 @@ import csv
 import io
 import tempfile
 import unittest
+from importlib import import_module
 from pathlib import Path
 
-from experiments.scripts.audit_dataset import audit_dataset, inspect_content
+audit = import_module("experiments.scripts.01_audit_dataset")
+audit_dataset = audit.audit_dataset
+inspect_content = audit.inspect_content
 
 
 class AuditDatasetTests(unittest.TestCase):

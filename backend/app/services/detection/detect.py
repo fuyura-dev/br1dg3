@@ -8,11 +8,10 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-
 from app.config import settings
 from app.services.detection.preprocess import NON_ESSENTIAL, preprocess
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 
 options = Options()
 options.add_argument("--disable-gpu")
@@ -20,6 +19,7 @@ options.add_argument("--no-sandbox")
 options.add_argument("--headless=new")
 
 AXE_SCRIPT = (Path(__file__).parent / "axe.min.js").read_text()
+STYLESHEET_TIMEOUT_MS = 10_000
 
 RELEVANT_RULES = (
     "aria-allowed-attr",
@@ -120,6 +120,57 @@ def _get_driver():
         ) from e
 
 
+def _wait_for_stylesheets(driver):
+    """Settle linked CSS, disable unavailable sheets, and return loading warnings."""
+    warnings = driver.execute_async_script("""
+        const timeoutMs = arguments[0];
+        const done = arguments[1];
+        const entries = [...document.querySelectorAll('link[rel~="stylesheet" i][href]')]
+            .filter(link => !link.disabled && !link.matches('[rel~="alternate" i]')
+                && matchMedia(link.media || 'all').matches)
+            .map(link => {
+                let state = window.__br1dg3Stylesheets.get(link) || 'pending';
+                const href = link.getAttribute('href');
+                try { new URL(href, document.baseURI); }
+                catch { state = 'unresolved_url'; }
+                return {link, href, state};
+            });
+        let finished = false;
+        const finish = () => {
+            if (finished) return;
+            finished = true;
+            clearTimeout(timer);
+            const warnings = [];
+            for (const entry of entries) {
+                if (entry.state === 'load') continue;
+                // A late response must not apply CSS while Axe is scanning.
+                entry.link.disabled = true;
+                const status = entry.state === 'pending' ? 'timeout'
+                    : entry.state === 'error' ? 'load_error' : entry.state;
+                warnings.push({href: entry.href, status});
+            }
+            requestAnimationFrame(() => requestAnimationFrame(() => done(warnings)));
+        };
+        const timer = setTimeout(finish, timeoutMs);
+        const check = () => {
+            if (entries.every(entry => entry.state !== 'pending')) finish();
+        };
+        for (const entry of entries) {
+            if (entry.state !== 'pending') continue;
+            for (const type of ['load', 'error']) {
+                entry.link.addEventListener(type, () => {
+                    entry.state = type;
+                    check();
+                }, {once: true});
+            }
+        }
+        check();
+    """, STYLESHEET_TIMEOUT_MS)
+    if not isinstance(warnings, list):
+        raise DetectionError("Stylesheet readiness returned an invalid result.")
+    return warnings
+
+
 def scan_with_report(html: str) -> ScanResult:
     """Run Axe once, retaining its report and separate selected-rule violations."""
     html = preprocess(html)
@@ -132,6 +183,16 @@ def scan_with_report(html: str) -> ScanResult:
         driver.get("data:text/html,")
         driver.execute_script(
             """
+            // Capture fast load/error events before inserting the saved HTML.
+            window.__br1dg3Stylesheets = new Map();
+            for (const type of ['load', 'error']) {
+                document.addEventListener(type, event => {
+                    const link = event.target;
+                    if (link.tagName === 'LINK' && link.matches('[rel~="stylesheet" i]')) {
+                        window.__br1dg3Stylesheets.set(link, type);
+                    }
+                }, true);
+            }
             const parser = new DOMParser();
             const doc = parser.parseFromString(arguments[0], 'text/html');
             const root = document.documentElement;
@@ -149,6 +210,7 @@ def scan_with_report(html: str) -> ScanResult:
             """,
             html,
         )
+        stylesheet_warnings = _wait_for_stylesheets(driver)
         driver.execute_script(AXE_SCRIPT)
 
         raw_res = driver.execute_async_script("""
@@ -192,6 +254,7 @@ def scan_with_report(html: str) -> ScanResult:
                 "selected_rule_ids": list(RELEVANT_RULES),
                 "prepared_html_sha256": sha256(html.encode("utf-8")).hexdigest(),
                 "removed_elements": list(NON_ESSENTIAL),
+                "stylesheet_warnings": stylesheet_warnings,
                 "axe": raw_res,
             },
         )

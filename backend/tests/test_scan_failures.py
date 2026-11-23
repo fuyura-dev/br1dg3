@@ -28,6 +28,7 @@ class TestScanFailureHandling(unittest.TestCase):
         self.get_driver = self.enterContext(
             patch.object(detection, "_get_driver", return_value=self.driver)
         )
+        self.enterContext(patch.object(detection, "_wait_for_stylesheets", return_value=[]))
         self.log = self.enterContext(patch.object(evaluator.streamer, "log"))
         self.enterContext(redirect_stdout(io.StringIO()))
         self.enterContext(patch.dict(repair_api.cache, {}, clear=True))

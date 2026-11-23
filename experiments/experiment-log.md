@@ -2,7 +2,7 @@
 
 ## 2026-11-22 — Initial audit and content review
 
-Ran [audit_dataset.py](scripts/audit_dataset.py) on the 331 original HTML files.
+Ran [01_audit_dataset.py](scripts/01_audit_dataset.py) on the 331 original HTML files.
 All were present, readable, nonempty, and identical to their reference copies.
 The pool contained 328 distinct contents and two exact-duplicate groups.
 
@@ -33,4 +33,44 @@ the manuscript's eligibility checks.
 
 Kept all **331 originals unchanged**. Created copies under `audit-split/unusable/`
 (38) and `audit-split/candidates/` (293), verifying every copy against its original.
-The audit script's four synthetic tests and Ruff checks passed.
+
+## 2026-11-23 — Eligibility filtering
+
+The **293 candidates** were assessed with
+[02_filter_dataset.py](scripts/02_filter_dataset.py), using shared preprocessing,
+configured Axe checks, affected-element mapping, and SDG extraction.
+
+**Criteria:** A technical pass requires detected violations, identification of all
+affected targets in the saved HTML, and successful SDG extraction. Documents with
+unmatched targets are excluded because the pipeline cannot reliably associate all
+detected violations with source elements. Detected, mapped, and unmapped counts
+are retained. Zero SDG edges alone do not exclude a document.
+
+Stylesheet loading problems are recorded as warnings. Unavailable stylesheets are
+disabled before scanning, and eligibility is decided from the completed Axe and
+mapping results. A successful scan with no detected violations is recorded as
+`not-passed`; processing errors remain under `needs-review`.
+
+**Results (`eligibility-004/`):**
+
+| Result | Files |
+| --- | ---: |
+| Passed technical checks | 258 |
+| Excluded: no violations confirmed by the configured checks | 28 |
+| Excluded: not all violation targets could be identified | 7 |
+| Processing errors requiring review | 0 |
+
+All **293 scans completed successfully**. The 35 excluded documents were copied
+to `not-passed/`; the 258 technical passes were copied to `passed/`. All copies
+match their inputs and originals, and the CSV and scan evidence agree.
+
+Of the 258 technical passes, **257 have SDG edges**. The remaining document has
+zero SDG edges and is retained with semantic applicability marked N/A.
+
+**Decision:** Retain all **258 passing documents** for both repair approaches under
+the applied eligibility criteria: **N = 258** and **N_s = 257**. The 38 audit
+exclusions and 35 eligibility exclusions leave 73 excluded from the original 331.
+
+Nine of the 28 zero-violation results also contain checks marked incomplete by
+Axe. Their exclusion records the absence of confirmed violations, not a finding
+of full accessibility.
