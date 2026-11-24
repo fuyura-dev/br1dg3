@@ -74,3 +74,16 @@ exclusions and 35 eligibility exclusions leave 73 excluded from the original 331
 Nine of the 28 zero-violation results also contain checks marked incomplete by
 Axe. Their exclusion records the absence of confirmed violations, not a finding
 of full accessibility.
+
+## Technical pilot
+
+Ran both repair methods on three accepted documents, including a larger page
+and the zero-SDG-edge case. All six executions produced candidates and completed
+scanning and measurement. Verified the six exported rows against saved records,
+including token usage, timings, and semantic N/A for the zero-edge document.
+
+The baseline ended with zero configured-check violations on all three documents.
+BR1DG3 ended with zero on one document and one on each of the other two, where
+an added heading introduced a landmark violation. Both methods retained a
+pre-existing HTML syntax error on one document. These outcomes were kept as
+measured. Pilot records remain separate from the full experiment.

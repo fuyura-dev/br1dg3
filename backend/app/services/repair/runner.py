@@ -200,7 +200,7 @@ def _step(current, token, table, pending, original_conditions, *, has_accepted_p
     return step, (outer_html(builder.soup) if patch.applied else current)
 
 
-def run_sdg(html, violations):
+def run_sdg(html, violations, *, on_progress=None):
     """html: the document. violations: raw Axe violations (from detect())."""
     prepared = preprocess(html)
     configuration = run_configuration("sdg", html, prepared)
@@ -242,11 +242,13 @@ def run_sdg(html, violations):
         step.original_node_id = orig_by_token.get(token)
         pending.discard(token)
         steps.append(step)
+        if on_progress is not None:
+            on_progress(step, strip_markers(current))
 
     return RepairRun(strip_markers(current), steps, unmapped, configuration=configuration)
 
 
-def run_baseline(html, violations):
+def run_baseline(html, violations, *, on_progress=None):
     """Zero-shot baseline: one call, the whole document, all violations at once."""
     prepared = preprocess(html)
     configuration = run_configuration("zero_shot", html, prepared)
@@ -255,6 +257,12 @@ def run_baseline(html, violations):
         return RepairRun(html, [], 0, configuration=configuration)
 
     step = Step("baseline", None, [v.get("id") for v in violations], "", generation_attempted=False)
+
+    def finish():
+        if on_progress is not None:
+            on_progress(step, html)
+        return RepairRun(html, [step], 0, configuration=configuration)
+
     try:
         baseline_prompt = build_baseline_prompt(html, violations)
         step.requested_rules = list(step.rules)
@@ -264,12 +272,14 @@ def run_baseline(html, violations):
         if isinstance(exc, LLMRequestError):
             step.llm = exc.result
         step.status, step.error = "llm_error", f"{type(exc).__name__}: {exc}"
-        return RepairRun(html, [step], 0, configuration=configuration)
+        return finish()
     if not step.llm.ok:                                                   # truncated / failed / empty
         step.status = f"llm_not_ok:{step.llm.status}"
-        return RepairRun(html, [step], 0, configuration=configuration)
+        return finish()
 
     fixed_html, status = parse_document_reply(step.llm.text)
     step.status = "applied" if status == "ok" else status
     step.candidate_html = fixed_html
-    return RepairRun(fixed_html if status == "ok" else html, [step], 0, configuration=configuration)
+    if status == "ok":
+        html = fixed_html
+    return finish()

@@ -5,6 +5,9 @@ baseline.
 
 See the [experiment log](experiment-log.md) for completed preparation steps and findings.
 
+See the [raw-data columns](schema/raw-data.md) and
+[example CSV](schema/example-results.csv) for the spreadsheet format.
+
 ## Layout
 
 ```text
@@ -15,6 +18,11 @@ experiments/
   scripts/                       # experiment commands
     01_audit_dataset.py
     02_filter_dataset.py
+    03_run_experiment.py
+    04_export_results.py
+  execution.py                   # paired runs and saved stages
+  export.py                      # saved records to CSV
+  records.py                     # local records and timing
   schema/                        # column definitions and synthetic examples
   tests/                         # tests using synthetic HTML
   local/                         # local data and results
@@ -125,4 +133,128 @@ Run the synthetic filter tests:
 
 ```bash
 python -m unittest discover -s experiments/tests -p 'test_filter_dataset.py' -v
+```
+
+## Paired experiment
+
+From the project root with the backend venv active, prepare the accepted inputs:
+
+```bash
+python experiments/scripts/03_run_experiment.py \
+  --dataset experiments/local/datasets/ai4se/eligibility-004 \
+  --inventory experiments/local/audit/my-check-002/inventory.csv \
+  --output experiments/local/runs/run-002 \
+  --prepare-only
+```
+
+This verifies filenames and hashes, copies original and prepared inputs, and
+writes `manifest.json`. It makes no browser or model calls. Choose a new output
+directory for each run. For a pilot, use a directory below `experiments/local/pilot/`
+and add `--documents` followed by original inventory row numbers (starting at 1,
+excluding the header). IDs retain those numbers after filtering.
+
+To process the next five pending documents, with both methods for each:
+
+```bash
+python experiments/scripts/03_run_experiment.py \
+  --resume experiments/local/runs/run-002 \
+  --batch-size 5
+```
+
+Repeat that command for the next batch. Change `5` to any positive integer to
+adjust the batch size. Omitting `--batch-size` processes all remaining documents.
+The limit applies to the current invocation; it is not saved as a default.
+You can also pass it when creating and executing a new run in one command.
+
+The full manifest and method order stay the same across batches. Completed work
+is skipped, and a document needing only its remaining evaluation or second method
+counts as one document. A failed pretest also uses one batch slot; recorded
+terminal failures are retained without retrying. Batch size limits documents,
+not model requests, tokens, or spending.
+
+Execution makes model requests using the configured backend model and shared
+settings. Each document has one fresh initial scan, shared by both methods.
+The methods run sequentially, alternating which goes first across documents.
+Each backend service receives the same decoded original so its own preprocessing
+produces the recorded prepared input. Repairs use the existing service functions
+and bypass frontend response caching.
+
+The runner saves replies and usage as repair steps finish, then saves the complete
+repair before final scanning and evaluation. Each validator has its own record;
+one failed measurement leaves the other results available. The five durations
+follow the [timing definitions](schema/raw-data.md#timing).
+
+Records are organized by document and method:
+
+```text
+run-002/
+  manifest.json
+  document-0001/
+    original.html
+    prepared.html
+    scan-before.json
+    pretest.json
+    baseline/
+      progress.json
+      repair.log
+      returned-repair.json
+      repair.json
+      candidate.html
+      scan-after.json
+      metrics.json
+      metrics/
+        effectiveness.json
+        safety.json
+        structure.json
+        semantic.json
+    br1dg3/
+      ...
+```
+
+Files appear as their stages run; a missing candidate has no `candidate.html`
+or final scan. JSON stage records retain attempt outcomes, elapsed times, and
+measurement evidence. Completed-response usage is stored with the repair.
+
+Resume skips completed stages and continues scanning/evaluation from a saved
+repair. Interrupted local scans or measurements can run again, retaining their
+attempt history. A completed failed stage is retained rather than retried.
+If a model request fails after the configured retry policy, the experiment saves
+its progress and stops before further requests. This includes quota and
+authentication errors. An unfinished generation blocks continuation until its
+recovery is reviewed; it is never automatically repeated. Completed replies
+rejected as repairs still proceed through the normal evaluation policy.
+
+Known replies remain in `progress.json`; their usage is a subtotal until the whole
+generation outcome is established. Changed input, candidate, configuration, or
+execution code stops dependent work. Prepare a fresh run after changing execution
+code; keep earlier manifests and results. A file lock prevents
+two commands from executing the same run concurrently (Linux/macOS).
+
+If the fresh pretest fails, finds no violations, or disagrees with the accepted
+mapping/SDG criteria, the document stays in the manifest with an error record and
+receives no model calls. Dataset membership is preserved for review.
+
+## Raw CSV export
+
+Export from saved records, including failed, interrupted, and unstarted pairs:
+
+```bash
+python experiments/scripts/04_export_results.py \
+  --run experiments/local/runs/run-002 \
+  --output experiments/local/exports/run-002.csv
+```
+
+The exporter writes the agreed 30 columns and does not load the model or browser
+services. Choose a new CSV filename for each export. It reads a stopped run;
+exporting while another command holds the execution lock is rejected.
+
+Exports include every planned pair. Between batches, unstarted pairs are marked
+`not_run` with unavailable measurements left blank. A full 258-document manifest
+therefore exports 516 rows throughout the run. Use a new filename for each progress
+export; the final CSV comes from the same run without merging batch files.
+
+Run the synthetic experiment tests:
+
+```bash
+python -m unittest discover -s experiments/tests -v
 ```
