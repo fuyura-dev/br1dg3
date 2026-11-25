@@ -2,7 +2,7 @@
 
 Use one CSV per run, with one row per document and method. Filter `method` in
 Sheets to compare `baseline` and `br1dg3`. Both rows use the same original
-measurements. A complete run over 258 documents has 516 rows, including failures.
+measurements. A complete run over 152 documents has 304 rows, including failures.
 
 [example-results.csv](example-results.csv) contains invented values for four
 documents under both methods. It illustrates the format, not experiment results.
@@ -124,6 +124,9 @@ these cases using statuses and supporting records. A no-candidate result can
 still have metrics time for usage/failure-policy computation while structure time
 is blank. Preserve per-attempt timing evidence when work is resumed.
 
+Offline semantic reevaluation is timed separately and does not replace the
+original execution times or add to these five CSV timing columns.
+
 These timings are supporting runtime measurements alongside the manuscript's
 API-call, token, and cost measures. The durations in the example CSV are invented.
 
@@ -141,9 +144,9 @@ experiment paper's document tables (5A–5F, called A1–A6 in its procedure).
 | Efficiency / 5E | Completed responses and token totals | TAC, TPT, TCT, TT, TC, CPF, TPF, APF using the documented price schedule. |
 | Semantic preservation / 5F | Original and preserved SDG edges and semantic/generation status | SDP = preserved / original × 100; ASDP over applicable documents. |
 
-Apply the same formulas separately to each method. The accepted dataset uses
-N = 258 and N_s = 257 per method. Joining or filtering the CSV must not double
-the original counts or treat 516 method rows as 516 distinct documents.
+Apply the same formulas separately to each method. After token-budget filtering,
+the dataset uses N = 152 and N_s = 151 per method. Joining or filtering the CSV
+must not double the original counts or treat 304 method rows as 304 distinct documents.
 
 In the manuscript's token notation, P_i is `prompt_tokens` and C_i combines
 `completion_tokens` plus `thought_tokens`. Compute TT from these components and

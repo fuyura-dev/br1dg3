@@ -18,6 +18,7 @@ experiments/
   scripts/                       # experiment commands
     01_audit_dataset.py
     02_filter_dataset.py
+    02_5_filter_token_budget.py
     03_run_experiment.py
     04_export_results.py
   execution.py                   # paired runs and saved stages
@@ -38,6 +39,11 @@ experiments/
           needs-review/          # unresolved checks
           results.csv
           scan-results.jsonl
+        token-budget-002/
+          passed/                # prepared HTML has at most 60,000 tokens
+          not-passed/            # prepared HTML exceeds 60,000 tokens
+          needs-review/          # token count could not be established
+          results.csv
     audit/                       # inventories, findings, and supporting evidence
     manifests/                   # inclusion decisions referencing original files
     pilot/                       # separately labeled technical pilot runs
@@ -120,9 +126,10 @@ the completed Axe and mapping results. Mapping exclusions retain the detected,
 mapped, and unmapped occurrence counts.
 
 Zero SDG edges do not prevent passing; semantic applicability is recorded as
-`not_applicable`. Missing measurements stay blank. `content_review` remains
-`pending`: passing these automated checks does not establish final inclusion
-under the manuscript's content-related criteria.
+`not_applicable`. Missing measurements stay blank. `content_review=pending` records
+that the script does not perform manual content review. Later inclusion decisions
+are recorded in the experiment log; the saved field is not updated automatically.
+The token filter carries it forward unchanged and uses `status` for its outcome.
 
 `results.csv` records per-file outcomes, reasons, and raw measurements.
 `scan-results.jsonl` retains each scan report, graph evidence, and result as one
@@ -135,13 +142,48 @@ Run the synthetic filter tests:
 python -m unittest discover -s experiments/tests -p 'test_filter_dataset.py' -v
 ```
 
+## Token-budget filter
+
+From the project root with the backend venv active:
+
+```bash
+python experiments/scripts/02_5_filter_token_budget.py \
+  --dataset experiments/local/datasets/ai4se/eligibility-004 \
+  --output experiments/local/datasets/ai4se/token-budget-002
+```
+
+The command reads `passed/` and `results.csv` from the eligibility stage. It uses
+the shared HTML decoding and preprocessing, removing `<script>` and `<style>`
+elements while retaining inline style attributes and stylesheet links. It sends
+the prepared HTML alone to the official Gemini Developer API `countTokens`
+endpoint, using `LLM_API_KEY` and `LLM_MODEL` from `backend/.env`. Use the same model
+for filtering and the paired experiment. Counting makes no repair or browser calls.
+
+| CSV status | Token-budget result | Folder |
+| --- | --- | --- |
+| `passed` | Count is at most 60,000, including exactly 60,000 | `passed/` |
+| `not_passed` | Count is greater than 60,000 | `not-passed/` |
+| `needs_review` | Decoding, preparation, or counting failed; count is unknown | `needs-review/` |
+
+Each group receives unchanged copies of the input HTML. The command verifies
+source and copy hashes. `results.csv` retains the eligibility scan and SDG fields,
+updates `status`, `reason`, and `error` for this stage, and adds `prepared_tokens`,
+`count_model`, `token_limit`, `exclusion_operator`, and `prepared_sha256`. Unknown
+counts stay blank. The 60,000-token limit leaves room for repair additions, but
+does not guarantee the generated output will fit.
+
+Choose a fresh output directory. Results are saved after each file; an interrupted
+run is partial and a rerun needs another directory. Review the completed report
+and any `needs-review` cases before preparing the paired experiment. Both methods
+use the same retained `passed/` set.
+
 ## Paired experiment
 
 From the project root with the backend venv active, prepare the accepted inputs:
 
 ```bash
 python experiments/scripts/03_run_experiment.py \
-  --dataset experiments/local/datasets/ai4se/eligibility-004 \
+  --dataset experiments/local/datasets/ai4se/token-budget-002 \
   --inventory experiments/local/audit/my-check-002/inventory.csv \
   --output experiments/local/runs/run-002 \
   --prepare-only
@@ -249,8 +291,8 @@ services. Choose a new CSV filename for each export. It reads a stopped run;
 exporting while another command holds the execution lock is rejected.
 
 Exports include every planned pair. Between batches, unstarted pairs are marked
-`not_run` with unavailable measurements left blank. A full 258-document manifest
-therefore exports 516 rows throughout the run. Use a new filename for each progress
+`not_run` with unavailable measurements left blank. A manifest with N documents
+exports 2N rows throughout the run. Use a new filename for each progress
 export; the final CSV comes from the same run without merging batch files.
 
 Run the synthetic experiment tests:

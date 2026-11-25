@@ -43,16 +43,28 @@ def prompt_for(html, rule="label", selector="#target"):
 
 
 class TestScopeSelectionAndPrompt(unittest.TestCase):
-    def test_only_immediate_parent_is_offered_and_target_markup_appears_once(self):
+    def test_only_immediate_parent_is_offered_and_target_markup_is_complete(self):
         _, prompt = prompt_for('<section><div><span>Nearby</span><input id="target"></div><p>Outside</p></section>')
         scope = prompt.edit_scope
         self.assertEqual(scope.block.name, "div")
         self.assertEqual(scope.allowed, ["target", "block"])
         self.assertNotIn("Outside", scope.block_markup)
-        self.assertEqual(prompt.user.count('id="target"'), 1)
+        target_section = prompt.user.split("## Target element [T]\n", 1)[1].split("\n\n##", 1)[0]
+        self.assertIn('id="target"', target_section)
+        self.assertEqual(prompt.user.count('id="target"'), 2)  # Complete in both [T] and [B].
         self.assertEqual(target_from_prompt(prompt)["id"], "target")
         self.assertIn('"scope" and "html"', prompt.system)
         self.assertIn("existing siblings", prompt.user)
+
+    def test_non_empty_target_keeps_attributes_and_children_when_block_offered(self):
+        _, prompt = prompt_for(
+            '<div><nav id="target" class="menu" aria-label="Nav"><a href="/home"><span>Home</span></a></nav></div>',
+            rule="landmark-unique",
+        )
+        self.assertEqual(prompt.edit_scope.allowed, ["target", "block"])
+        target_section = prompt.user.split("## Target element [T]\n", 1)[1].split("\n\n##", 1)[0]
+        self.assertIn('class="menu"', target_section)
+        self.assertIn('<a href="/home"><span>Home</span></a>', target_section)
 
     def test_editable_and_external_graph_context_are_distinguished(self):
         _, prompt = prompt_for(

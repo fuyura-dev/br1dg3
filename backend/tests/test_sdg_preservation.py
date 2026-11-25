@@ -78,18 +78,19 @@ class TestSDGPreservation(unittest.TestCase):
         self.assertFalse(result.has_dependencies)
         self.assertIsNone(result.preservation_rate)
 
-    def test_repeated_insertions_remain_unresolved_without_false_perfect_score(self):
+    def test_repeated_insertions_count_unmatched_endpoints_as_lost_without_false_perfect_score(self):
         before = LABEL + RADIOS
         after = LABEL + RADIOS.replace('</form>', '<input type="radio" name="x"></form>')
         result = semantic.calculate_semantic_preservation(before, after)
-        self.assertEqual(result.status, "unresolved_matching")
-        self.assertIsNone(result.dependencies_valid)
-        self.assertIsNone(result.broken_count)
-        self.assertIsNone(result.preservation_rate)
+        self.assertEqual(result.status, "measured")
+        self.assertEqual(result.dependencies_valid, result.preserved_observed)
+        self.assertEqual(result.broken_count, result.not_preserved_observed + result.unmatched_endpoint_count)
+        self.assertLess(result.preservation_rate, 100)
         self.assertGreater(result.preserved_observed, 0)
-        self.assertGreater(result.unresolved_count, 0)
+        self.assertGreater(result.unmatched_endpoint_count, 0)
+        self.assertEqual(result.unresolved_count, 0)
         self.assertEqual(result.dependencies_before,
-                         result.preserved_observed + result.not_preserved_observed + result.unresolved_count)
+                         result.preserved_observed + result.not_preserved_observed + result.unmatched_endpoint_count)
 
     def test_original_extraction_failure_is_not_no_dependencies(self):
         with patch.object(semantic, 'SDGBuilder', side_effect=RuntimeError('controlled')):
@@ -149,17 +150,25 @@ class TestSDGPreservation(unittest.TestCase):
         self.assertEqual(result.status, 'extraction_error')
         self.assertIsNone(result.preservation_rate)
 
-    def test_removed_unmatched_endpoint_is_unresolved_not_assumed_deleted(self):
+    def test_removed_unmatched_endpoint_counts_as_lost_and_records_unmatched_count(self):
         result = semantic.calculate_semantic_preservation(LABEL, '<input id="field">')
-        self.assertEqual(result.status, 'unresolved_matching')
-        self.assertEqual(result.unresolved_count, 1)
+        self.assertEqual(result.status, 'measured')
+        self.assertEqual(result.dependencies_valid, 0)
+        self.assertEqual(result.broken_count, 1)
+        self.assertEqual(result.not_preserved_observed, 0)
+        self.assertEqual(result.unmatched_endpoint_count, 1)
+        self.assertEqual(result.unresolved_count, 0)
+        self.assertEqual(result.preservation_rate, 0)
+        self.assertEqual(result.edge_outcomes[0]['outcome'], 'unmatched_endpoint')
 
     def test_duplicate_id_is_not_used_as_unique_anchor(self):
         before = '<form id="f"><input id="x"><input id="x"></form>'
         after = before.replace('</form>', '<input id="x"></form>')
         result = semantic.calculate_semantic_preservation(before, after)
         self.assertEqual(result.matching['duplicate_original_ids'], ['x'])
-        self.assertEqual(result.status, 'unresolved_matching')
+        self.assertEqual(result.status, 'measured')
+        self.assertGreater(result.unmatched_endpoint_count, 0)
+        self.assertLess(result.preservation_rate, 100)
         self.assertEqual(result.matching['methods']['unique_id'], 1)  # Only form f.
 
     def test_tracking_markers_cannot_bias_either_method(self):
@@ -188,9 +197,10 @@ class TestSDGPreservation(unittest.TestCase):
 
     def test_api_names_identify_new_meaning_and_keep_legacy_aliases(self):
         result = semantic.calculate_semantic_preservation(LABEL, LABEL).to_dict()
-        self.assertEqual(result['metric_version'], 2)
+        self.assertEqual(result['metric_version'], 4)
         self.assertEqual(result['relationships_preserved'], result['dependencies_valid'])
         self.assertEqual(result['preservation_rate'], 100)
+        self.assertEqual(result['unmatched_endpoint_count'], 0)
 
     def test_shared_repair_graph_is_not_modified_by_matching(self):
         original, repaired = SDGBuilder(LABEL), SDGBuilder(LABEL)

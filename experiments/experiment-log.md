@@ -87,3 +87,47 @@ BR1DG3 ended with zero on one document and one on each of the other two, where
 an added heading introduced a landmark violation. Both methods retained a
 pre-existing HTML syntax error on one document. These outcomes were kept as
 measured. Pilot records remain separate from the full experiment.
+
+## 2026-11-25 — Token-budget filtering
+
+Applied [02_5_filter_token_budget.py](scripts/02_5_filter_token_budget.py) to the
+258 eligible documents. Counted HTML after shared preprocessing removes script
+and style elements, using the Gemini Developer API `countTokens` endpoint with
+`gemini-3.1-flash-lite`. Retained counts at or below **60,000** and excluded counts
+above **60,000** to reduce full-document output truncation risk for both methods.
+
+**Results (`token-budget-002/`):** 152 passed, 106 exceeded the limit, and zero
+required review. Verified all records, group memberships, original/copy hashes,
+prepared HTML hashes, and threshold decisions. Original files are unchanged.
+
+The same **152 documents** remain for both methods: **N = 152**, **N_s = 151**.
+One retained document has zero SDG edges and remains semantic N/A. The paired
+experiment will produce **304 method rows**, including unsuccessful runs.
+
+## 2026-11-25 — Paired experiment
+
+Completed all **152 of 152** documents under both methods in `run-003/`
+(`gemini-3.1-flash-lite`, `thinking_level: minimal`, semantic evaluator v4).
+All 152 shared pretests and all 304 method outcomes retain complete token usage
+and zero transport retries: **260 accepted candidates** (151 baseline,
+109 BR1DG3), **40 partial candidates** (BR1DG3), and **4 no-candidate outcomes**
+retained under the declared failure policy:
+
+- Documents 26, 35, and 44 BR1DG3 (target steps exceeding scope limits or rejected
+  by tracking checks).
+- Document 174 (`www_microsoft_com_en_us_research.html`) baseline, whose single
+  whole-document request was rejected by the provider with HTTP 400 (`recitation`
+  / copyright content filter) after 131.5 seconds. Following review of the saved
+  attempt record, it was finalized as `no_candidate` (`no_candidate_failure_policy`)
+  without repeating the request; BR1DG3 completed normally on Document 174.
+
+All 300 post-repair scans and all 304 evaluation stages succeeded: **298 measured**
+semantic results (150 baseline, 148 BR1DG3), **4 no-candidate failure-policy**
+outcomes (1 baseline, 3 BR1DG3), and **2 semantic N/A** outcomes (`no_relationships`
+on zero-edge Document 317 under both methods), with zero unresolved semantic
+measurements or validator errors.
+
+Verified the final 304-row raw export (`run-003-final.csv`): **304 completed, 0 error,
+0 interrupted, 0 unstarted**, covering all **N = 152** paired documents
+(**N_s = 151** for semantic dependency preservation), ready for spreadsheet
+calculation.

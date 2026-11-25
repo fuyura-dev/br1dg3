@@ -114,7 +114,7 @@ and in N_s only when original dependencies exist; do not drop them as missing TE
 ## SDG relationship preservation
 
 `semantic.py::calculate_semantic_preservation()` retains its entry-point name for
-compatibility but now reports `metric: sdg_relationship_preservation`, version 2.
+compatibility and reports `metric: sdg_relationship_preservation`, version 4.
 The interface and thesis dimension keep the name **Semantic Dependency
 Preservation**, operationally defined as preservation of SDG-modeled relationships.
 It measures preservation of the existing SDG model's extracted edges across its eight
@@ -149,22 +149,46 @@ preservation of **valid** semantic dependencies.
 ### Element correspondence
 
 `semantic_matching.py` provides a deterministic, one-to-one heuristic shared by
-both methods. It uses no repair tracking tokens or graph-preservation optimization:
+both methods (`policy: unique_ids_then_normalized_subtrees_then_matched_parent_v3`).
+It uses no repair tracking tokens or graph-preservation optimization:
 
 1. Identical prepared documents use document-order occurrence correspondence.
 2. Otherwise, IDs appearing exactly once on each side anchor correspondence.
-3. Unique normalized subtrees can anchor whole corresponding subtrees, including
+3. Unique normalized subtrees anchor whole corresponding subtrees, including
    repeated descendants, if they do not conflict with existing ID anchors.
-4. Within matched parents, unique subtrees and unique node fingerprints supply
-   further matches. An unchanged subtree rooted at a matched ID is also aligned.
+4. Strong matching alternates top-down (unique subtrees and unique node
+   fingerprints inside matched parents) with bottom-up parent consensus (an
+   unmatched parent whose own fingerprint matches an unmatched candidate parent
+   and whose matched children map exclusively between them).
+5. After strong matching stops expanding, ordered fallbacks run one node at a
+   time and return to strong matching after any new match:
+   - Label-attribute relaxation (`aria-label`, `alt`, `title`) for unique
+     subtrees inside matched parents, globally unique subtrees, unique node
+     fingerprints inside matched parents, and bottom-up parent consensus.
+   - Heading-level retagging (`h1`–`h6`) for unique subtrees/nodes inside
+     matched parents and globally unique heading subtrees.
+   - Additional repair/cleanup attributes (`role`, `lang`, `type`) inside
+     matched parents and root, first preserving empty attributes and then
+     dropping empty attributes (`""` / empty `class`).
+   - Originally-empty headings or `<label>` elements filled with accessible text
+     (requiring the exact original tag and uniqueness within a matched parent).
+   - Monotonic sibling gaps inside matched parents: first a unique 1-to-1
+     unmatched child between matched anchors, then exact same-count (`k == k`)
+     identical unmatched siblings sharing a relaxed subtree fingerprint, paired
+     in document order.
 
 Fingerprints include tags, other attributes, direct text and child order. They
-normalize whitespace and ignore IDs, the modeled ID-reference attribute values,
+normalize whitespace and ignore IDs, modeled ID-reference attribute values,
 fragment-link targets, comments and repair-marker attributes. External `href`
 values remain evidence. Unique-ID matches can survive tag/attribute edits; the
-other paths require their declared fingerprint evidence. No memory-address-based
-sibling ordering, fuzzy score threshold or forced match for ambiguous siblings
-is used. The same matching inputs/rules apply to zero-shot and BR1DG3 artifacts.
+other paths require their declared fingerprint evidence. No fuzzy score
+threshold or forced match for deletions or mismatched sibling counts is used.
+The same matching inputs and rules apply to zero-shot and BR1DG3 artifacts.
+
+Fallback exclusions apply only to correspondence: SDG extraction and typed-edge
+comparison still use the complete attributes and real heading tags. Matching an
+element does not establish preservation of its relationships. Results record the
+matching policy version, fallback exclusions, and the basis of each match.
 
 This is operational correspondence, not proof of physical or semantic identity.
 Reused unique IDs or indistinguishable replacements can still be misleading;
@@ -183,32 +207,31 @@ Prefer `relationships_before`, `relationships_preserved`, `preservation_rate`,
 
 | Status | Result |
 | --- | --- |
-| `measured` | All original edge outcomes are established; counts and rate available. |
+| `measured` | Original denominator and preservation rate are available; edges with an unmatched endpoint after shared correspondence count as not preserved and are tracked separately in `unmatched_endpoint_count`. |
 | `no_relationships` | Original count 0, `has_dependencies: false`, rate null. |
-| `unresolved_matching` | Original denominator/eligibility preserved, final preserved count/rate/not-preserved count null. Known outcomes and unresolved count remain available. |
 | `extraction_error` | Error stage/type/message preserved. An original failure leaves denominator/eligibility null; candidate or matching failure preserves the original denominator. |
 | `no_candidate_failure_policy` | When original edges exist, assigned preserved count/rate 0. Observed outcomes stay null because no candidate was measured. |
 
 `edge_outcomes` retains each original edge, mapped endpoints where known, and
-`preserved`, `not_preserved` or `unresolved`. `preserved_observed`,
-`not_preserved_observed`, `unresolved_count` and per-type preserved breakdowns are
-supporting counts, not complete totals when matching is unresolved. Their sum
-equals the original count after successful extraction/matching. `matching`
-records the policy, pairs, bases, duplicate IDs and unmatched node lists.
+`preserved`, `not_preserved` or `unmatched_endpoint`. `preserved_observed`,
+`not_preserved_observed` (matched endpoints whose edge broke), and
+`unmatched_endpoint_count` (deleted, corrupted, or unmatchable endpoints counted
+as lost in `not_preserved_count`) sum to `relationships_before`. `unresolved_count`
+remains 0 on measured v4 results for legacy compatibility. `matching` records
+the policy, pairs, bases, duplicate IDs and unmatched node lists.
 
-An unmatched endpoint is unresolved, not assumed deleted. If a supplied candidate
-has no parsed elements, it has no endpoints and preservation is measured as zero.
-A missing/non-string candidate is an error unless the explicit no-candidate
-policy applies. A graph-construction/endpoint failure is never converted to an
-empty graph. Other metrics remain independently evaluable.
+In version 4, an original edge whose source or target remains unmatched after
+shared correspondence is counted as not preserved (`unmatched_endpoint`) rather
+than leaving the document score unavailable. If a supplied candidate has no
+parsed elements, it has no endpoints and preservation is measured as zero. A
+missing/non-string candidate is an error unless the explicit no-candidate policy
+applies. A graph-construction/endpoint failure is never converted to an empty
+graph. Other metrics remain independently evaluable.
 
-Resolve missing measurements from saved artifacts where possible; report missing
-counts and evaluable paired coverage if they persist. Do not shrink a document's
-original denominator, treat known subtotals as final results, or discard a page
-from just one method. Pilot matching coverage before final experiments. Version 1
-results are not comparable totals under version 2; reevaluate saved artifacts.
-This response evidence does not implement the planned experiment exporter or
-automatic successful-run archival.
+Report evaluator versions consistently and reevaluate saved artifacts under one
+version while retaining earlier reports. Version 1, 2, 3, and 4 results differ
+in correspondence or unmatched-endpoint policy and must not be pooled across
+versions.
 
 Run `python -m unittest tests.test_semantic tests.test_sdg_preservation` for occurrence
 counting, correspondence, model limits, missingness and evaluator integration.

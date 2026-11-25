@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from importlib import import_module
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -104,6 +105,23 @@ class ExperimentTests(unittest.TestCase):
         self.assertEqual([r["run_status"] for r in self.rows(manifest)], ["not_run"] * 4)
         with self.assertRaisesRegex(ValueError, "new run"):
             self.prepare()
+
+    def test_token_filtered_dataset_preserves_ids_prepared_hashes_and_pairs(self):
+        filtering = import_module("experiments.scripts.02_5_filter_token_budget")
+        self.inputs(3)
+        dataset = self.local / "datasets/token-budget"
+        with patch.object(filtering, "count_tokens", side_effect=[60_000, 60_001, 42]):
+            filtering.filter_dataset(self.dataset, dataset, None, "test-model")
+        manifest = execution.prepare_run(dataset, self.inventory, self.output)
+        self.assertEqual([d["document_id"] for d in manifest["documents"]], ["Document 2", "Document 4"])
+        for document in manifest["documents"]:
+            self.assertEqual(document["prepared_sha256"], document["eligibility"]["prepared_sha256"])
+            self.assertEqual(document["eligibility"]["original_sdg_edges"], "1")
+            self.assertEqual(set(document["methods"]), {"baseline", "br1dg3"})
+        self.assertEqual(len(self.rows(manifest)), 4)
+        self.scan.assert_not_called()
+        self.baseline.assert_not_called()
+        self.sdg.assert_not_called()
 
     def test_shared_input_alternating_order_raw_export_and_no_regeneration(self):
         self.inputs(2)

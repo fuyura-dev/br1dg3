@@ -14,11 +14,12 @@ call; the document stays in the run and later targets continue. No ordinary
 markup is truncated. HTML/body targets retain the dedicated shortened root path
 below, with target-only replies and its existing 8,000-character view limit.
 
-When a block is available, the prompt shows a target locator and the complete
-block once. Related SDG elements inside the scope are identified as editable;
-those outside it remain read-only. Only the current target's requested rules
-drive the repair, even when surrounding markup can change. Scope selection uses
-the current DOM, not source line ranges or a union of disconnected graph nodes.
+When a block is available, the prompt shows the complete target element `[T]`
+and the complete immediate-parent block `[B]`. Related SDG elements inside the
+scope are identified as editable; those outside it remain read-only. Only the
+current target's requested rules drive the repair, even when surrounding markup
+can change. Scope selection uses the current DOM, not source line ranges or a
+union of disconnected graph nodes.
 
 SDG output must be exactly one JSON object with two fields:
 

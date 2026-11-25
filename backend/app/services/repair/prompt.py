@@ -269,22 +269,15 @@ def build_sdg_prompt(ctx, element_ids):
     elif target_el.name == "body":
         root_markup = _shallow_layout_tree(target_el, max_depth=1)
     scope = select_scope(target_el, root_markup=root_markup)
-    target_markup = scope.target_markup
-    if scope.block is not None and target_el.get(MARKER):
-        # Show the target's locator; its complete markup appears once in [B].
-        target_markup = f'<{target_el.name} {MARKER}="{escape(target_el[MARKER], quote=True)}">'
-        if target_el.name not in VOID_TAGS:
-            target_markup += f'</{target_el.name}>'
-
     parts = [
         "## Violations on the target element\n" + violations,
-        f"## Target element [T]\n{target_markup}",
+        f"## Target element [T]\n{scope.target_markup}",
     ]
     if scope.block is not None:
         parts.append(f"## Editable block [B]\n{scope.block_markup}")
         parts.append(
             "## Scope permissions\n"
-            "The target entry is a locator when it carries a tracking marker; [B] contains its complete markup. "
+            "[T] shows the complete target element and [B] shows its complete immediate-parent block. "
             "You may change [T] alone, or its immediate-parent block [B] including existing siblings, "
             "only as needed for the reported target violations. Other elements' own violations remain scheduled separately. "
             "Return scope=target for target-only edits, or scope=block with the complete single-root block for surrounding edits. "
